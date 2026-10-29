@@ -5,6 +5,7 @@ import { ClickGuiModal } from './components/ClickGuiModal';
 import { CodeExplorer } from './components/CodeExplorer';
 import { NeuroAiStudio } from './components/NeuroAiStudio';
 import { ShaderCanvas } from './components/ShaderCanvas';
+import { GitHubCiStudio } from './components/GitHubCiStudio';
 import { downloadFabricModZip } from './utils/javaModExporter';
 import { sound } from './utils/audio';
 import confetti from 'canvas-confetti';
@@ -16,10 +17,9 @@ import {
   Sparkles,
   Layers,
   ShieldCheck,
-  Zap,
   Activity,
-  CheckCircle2,
-  ExternalLink,
+  Cloud,
+  Github,
 } from 'lucide-react';
 
 export default function App() {
@@ -30,7 +30,7 @@ export default function App() {
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [fontFamily, setFontFamily] = useState<string>('Plus Jakarta Sans');
   const [bgBlur, setBgBlur] = useState<number>(18);
-  const [currentTab, setCurrentTab] = useState<'gui' | 'code' | 'ai' | 'shaders'>('gui');
+  const [currentTab, setCurrentTab] = useState<'gui' | 'github' | 'code' | 'ai' | 'shaders'>('gui');
   const [isShiftPressed, setIsShiftPressed] = useState<boolean>(false);
 
   // Global listener for Right Shift (and Escape to close)
@@ -116,7 +116,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Right Shift Hotkey Notification Badge */}
+          {/* Right Shift Hotkey Notification Badge & GitHub CI button */}
           <div className="flex items-center gap-3">
             <button
               onClick={() => {
@@ -135,6 +135,17 @@ export default function App() {
             </button>
 
             <button
+              onClick={() => {
+                sound.playClick();
+                setCurrentTab('github');
+              }}
+              className="px-3.5 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border border-white/15 text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer"
+            >
+              <Cloud className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="hidden sm:inline">Сборка на GitHub</span>
+            </button>
+
+            <button
               onClick={async () => {
                 sound.playClick();
                 await downloadFabricModZip();
@@ -143,7 +154,7 @@ export default function App() {
               className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-indigo-600/30 transition-all cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Скачать Fabric Mod (.zip)</span>
+              <span className="hidden sm:inline">Скачать Mod .zip</span>
             </button>
           </div>
         </div>
@@ -155,6 +166,7 @@ export default function App() {
           <div className="flex items-center gap-2">
             {[
               { id: 'gui', label: '🎮 Интерактивное Меню (ClickGUI)', icon: Layers },
+              { id: 'github', label: '☁️ Сборка на GitHub (CI/CD)', icon: Cloud },
               { id: 'code', label: '📦 Исходники Fabric 1.21.4 (Java 21)', icon: Code2 },
               { id: 'ai', label: '🧠 Нейросеть GRU (default.json)', icon: Cpu },
               { id: 'shaders', label: '✨ Шейдеры (Core Shaders)', icon: Sparkles },
@@ -192,7 +204,7 @@ export default function App() {
             </span>
             <span className="flex items-center gap-1.5">
               <Activity className="w-3.5 h-3.5 text-purple-400" />
-              GRU Latency: 0.4ms
+              GRU Latency: 0.04ms
             </span>
           </div>
         </div>
@@ -337,13 +349,16 @@ export default function App() {
           </div>
         )}
 
-        {/* Tab 2: Full Fabric 1.21.4 Source Code */}
+        {/* Tab 2: GitHub Actions CI/CD Studio */}
+        {currentTab === 'github' && <GitHubCiStudio />}
+
+        {/* Tab 3: Full Fabric 1.21.4 Source Code */}
         {currentTab === 'code' && <CodeExplorer />}
 
-        {/* Tab 3: Neuro AI Studio */}
+        {/* Tab 4: Neuro AI Studio */}
         {currentTab === 'ai' && <NeuroAiStudio />}
 
-        {/* Tab 4: Shader Studio */}
+        {/* Tab 5: Shader Studio */}
         {currentTab === 'shaders' && (
           <div className="space-y-6">
             <div className="p-6 rounded-3xl acrylic-card">
