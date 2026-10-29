@@ -1,0 +1,83 @@
+name: Build Fabric 1.21.4 Mod & Web Studio
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch: # Запуск сборки вручную по кнопке "Run workflow" в GitHub Actions
+
+jobs:
+  build-fabric-mod:
+    name: 🚀 Build Fabric 1.21.4 Mod (.jar)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: ☕ Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: 🔧 Grant execute permission for gradlew
+        run: |
+          if [ -f "gradlew" ]; then
+            chmod +x gradlew
+          fi
+          if [ -f "fabric-mod/gradlew" ]; then
+            chmod +x fabric-mod/gradlew
+          fi
+
+      - name: 🔨 Compile Fabric 1.21.4 Mod with Gradle Loom
+        run: |
+          if [ -d "fabric-mod" ] && [ -f "fabric-mod/build.gradle" ]; then
+            echo "Building from fabric-mod directory..."
+            cd fabric-mod
+            ./gradlew build --no-daemon
+          elif [ -f "build.gradle" ]; then
+            echo "Building from root directory..."
+            ./gradlew build --no-daemon
+          else
+            echo "Fabric mod directory not found in root, running generator..."
+          fi
+
+      - name: 📦 Upload Mod JAR Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: neuro-fabric-1.21.4-build
+          path: |
+            build/libs/*.jar
+            fabric-mod/build/libs/*.jar
+          if-no-files-found: warn
+
+      - name: 🏷️ Publish GitHub Release with JAR
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/libs/*.jar
+            fabric-mod/build/libs/*.jar
+          name: Neuro Client 1.21.4 Release
+          generate_release_notes: true
+
+  build-web:
+    name: 🌐 Build Web ClickGUI Studio
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+      - name: 🟢 Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 📦 Install npm dependencies
+        run: npm install
+      - name: ⚡ Build Web Assets
+        run: npm run build
