@@ -1,0 +1,6 @@
+{
+  "name": "Neuro Fabric 1.21.4 - Modern ClickGUI & Mod Studio",
+  "description": "Элитное меню мода для Fabric 1.21.4 с открытием на Правый Shift, кастомными шейдерами, AI Neuro GRU ротациями, визуальным конфигуратором и чистым Java кодом.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
