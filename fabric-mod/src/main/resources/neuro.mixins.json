@@ -1,16 +1,10 @@
 {
-  "required": true,
+  "required": false,
   "minVersion": "0.8",
   "package": "neuro.client.mixin",
   "compatibilityLevel": "JAVA_21",
-  "mixins": [
-  ],
-  "client": [
-    "KeyboardMixin",
-    "InGameHudMixin",
-    "WorldRendererMixin",
-    "MinecraftClientMixin"
-  ],
+  "mixins": [],
+  "client": [],
   "injectors": {
     "defaultRequire": 1
   }

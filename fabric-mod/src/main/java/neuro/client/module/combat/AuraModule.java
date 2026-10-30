@@ -3,7 +3,6 @@ package neuro.client.module.combat;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
@@ -28,19 +27,20 @@ public class AuraModule extends Module {
     private final SliderSetting preAimLatency = new SliderSetting("Pre-Aim Latency", 80, 0, 300, 10);
     private final BooleanSetting raycastCheck = new BooleanSetting("Raycast Check", true);
     private final BooleanSetting autoShieldBreaker = new BooleanSetting("Auto Shield Breaker", true);
-    private final BooleanSetting silentRotation = new BooleanSetting("Silent Rotation", true);
+    private final BooleanSetting silentRotation = new BooleanSetting("Silent Rotation", false);
 
     private LivingEntity targetEntity = null;
 
     public AuraModule() {
         super("Aura", "Интеллектуальная киллаура с нейросетевой наводкой GRU", Category.COMBAT);
+        this.setEnabled(true);
         this.addSettings(rotationMode, attackDistance, wallDistance, preAimLatency,
                 raycastCheck, autoShieldBreaker, silentRotation);
     }
 
     @Override
     public void onTick(MinecraftClient client) {
-        if (client.player == null || client.world == null) {
+        if (client.player == null || client.world == null || client.interactionManager == null) {
             this.targetEntity = null;
             return;
         }
@@ -59,31 +59,38 @@ public class AuraModule extends Module {
         if (this.targetEntity == null) return;
 
         double dist = client.player.distanceTo(this.targetEntity);
-        if (dist > maxDist) return;
+        if (dist > maxDist) {
+            this.targetEntity = null;
+            return;
+        }
 
         if (this.raycastCheck.getValue() && !canSeeEntity(client, this.targetEntity)) {
             if (dist > this.wallDistance.getValue()) return;
         }
 
-        float[] rotations = calculateRotations(client, this.targetEntity);
-
-        if ("Neuro GRU AI".equals(this.rotationMode.getValue())) {
-            NeuroAuraEngine engine = NeuroClient.getInstance().getNeuroEngine();
-            float[] neuroDeltas = engine.predictRotations(client.player, this.targetEntity);
-            rotations[0] += neuroDeltas[0];
-            rotations[1] += neuroDeltas[1];
-        }
-
-        if (!this.silentRotation.getValue()) {
-            client.player.setYaw(rotations[0]);
-            client.player.setPitch(rotations[1]);
-        }
-
+        boolean attackedThisTick = false;
         float cooldown = client.player.getAttackCooldownProgress(0.5f);
         if (cooldown >= 1.0f) {
             client.interactionManager.attackEntity(client.player, this.targetEntity);
             client.player.swingHand(Hand.MAIN_HAND);
-            client.player.resetLastAttackedTicks();
+            attackedThisTick = true;
+        }
+
+        if ("Neuro GRU AI".equals(this.rotationMode.getValue())) {
+            NeuroAuraEngine engine = NeuroClient.getInstance().getNeuroEngine();
+            float[] stepAngles = engine.computeStep(client.player, this.targetEntity, attackedThisTick);
+            if (!this.silentRotation.getValue()) {
+                client.player.setYaw(client.player.getYaw() + stepAngles[0]);
+                client.player.setPitch(MathHelper.clamp(client.player.getPitch() + stepAngles[1], -90.0f, 90.0f));
+            }
+        } else {
+            float[] targetRot = calculateRotations(client, this.targetEntity);
+            if (!this.silentRotation.getValue()) {
+                float diffYaw = MathHelper.wrapDegrees(targetRot[0] - client.player.getYaw());
+                float diffPitch = targetRot[1] - client.player.getPitch();
+                client.player.setYaw(client.player.getYaw() + diffYaw * 0.65f);
+                client.player.setPitch(MathHelper.clamp(client.player.getPitch() + diffPitch * 0.65f, -90.0f, 90.0f));
+            }
         }
     }
 
@@ -113,5 +120,9 @@ public class AuraModule extends Module {
         float pitch = (float) -Math.toDegrees(Math.atan2(diffY, diffXZ));
 
         return new float[]{MathHelper.wrapDegrees(yaw), MathHelper.clamp(pitch, -90.0f, 90.0f)};
+    }
+
+    public LivingEntity getTargetEntity() {
+        return targetEntity;
     }
 }

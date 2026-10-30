@@ -24,7 +24,7 @@ export const GitHubCiStudio: React.FC = () => {
   const [buildStep, setBuildStep] = useState<number>(0);
   const [buildLogs, setBuildLogs] = useState<string[]>([]);
 
-  const workflowYaml = `name: Build Fabric 1.21.4 Mod
+  const workflowYaml = `name: Build Fabric 1.21.4 Mod & Web Studio
 
 on:
   push:
@@ -32,11 +32,11 @@ on:
     tags: [ "v*" ]
   pull_request:
     branches: [ "main", "master" ]
-  workflow_dispatch: # Ручной запуск сборки в 1 клик
+  workflow_dispatch:
 
 jobs:
-  build:
-    name: Build Minecraft 1.21.4 Fabric Mod
+  build-fabric-mod:
+    name: 🚀 Build Fabric 1.21.4 Mod (.jar)
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -50,28 +50,31 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
-          cache: 'gradle'
 
-      - name: 🔧 Grant execute permission for gradlew
-        run: chmod +x gradlew
+      - name: 🐘 Setup Gradle 8.12
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.12'
 
-      - name: 🚀 Build Mod with Gradle
-        run: ./gradlew build --no-daemon
+      - name: 🔨 Compile Fabric 1.21.4 Mod with Gradle Loom
+        run: |
+          if [ -d "fabric-mod" ] && [ -f "fabric-mod/build.gradle" ]; then
+            cd fabric-mod
+            gradle build --no-daemon
+          else
+            gradle build --no-daemon
+          fi
 
-      - name: 📦 Upload Mod Jar Artifact
+      - name: 📦 Upload Mod JAR Artifact
         uses: actions/upload-artifact@v4
         with:
           name: neuro-fabric-1.21.4-build
-          path: build/libs/*.jar
-          if-no-files-found: error
-
-      - name: 🏷️ Create Release with JAR
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: build/libs/*.jar
-          name: Neuro Client 1.21.4 Release
-          generate_release_notes: true`;
+          path: |
+            build/libs/*.jar
+            fabric-mod/build/libs/*.jar
+            !build/libs/*-sources.jar
+            !fabric-mod/build/libs/*-sources.jar
+          if-no-files-found: error`;
 
   const copyYaml = () => {
     sound.playClick();

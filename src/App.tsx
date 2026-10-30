@@ -145,16 +145,29 @@ export default function App() {
               <span className="hidden sm:inline">Сборка на GitHub</span>
             </button>
 
+            <a
+              href="/neuro-fabric-1.21.4-1.0.0.jar"
+              download="neuro-fabric-1.21.4-1.0.0.jar"
+              onClick={() => {
+                sound.playClick(900, 0.12);
+                confetti({ particleCount: 80, spread: 70 });
+              }}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-600/30 transition-all cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Скачать готовый .JAR (1.21.4)</span>
+            </a>
+
             <button
               onClick={async () => {
                 sound.playClick();
                 await downloadFabricModZip();
                 confetti({ particleCount: 70, spread: 60 });
               }}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-indigo-600/30 transition-all cursor-pointer"
+              className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-indigo-600/30 transition-all cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Скачать Mod .zip</span>
+              <span className="hidden sm:inline">Исходники .ZIP</span>
             </button>
           </div>
         </div>

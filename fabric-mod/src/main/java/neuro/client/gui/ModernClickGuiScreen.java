@@ -7,30 +7,25 @@ import neuro.client.NeuroClient;
 import neuro.client.module.Category;
 import neuro.client.module.Module;
 import neuro.client.module.ModuleManager;
-import neuro.client.setting.*;
+import neuro.client.setting.BooleanSetting;
+import neuro.client.setting.ModeSetting;
+import neuro.client.setting.Setting;
+import neuro.client.setting.SliderSetting;
 import org.lwjgl.glfw.GLFW;
 
 import java.awt.Color;
 import java.util.List;
 
-/**
- * Премиальное интерактивное ClickGUI меню для Minecraft 1.21.4.
- * Использует официальный DrawContext 1.21.4, математические сквирклы,
- * акриловое размытие и цветовую гамму Cyber Violet.
- */
 public class ModernClickGuiScreen extends Screen {
     private Category currentCategory = Category.COMBAT;
     private Module expandedModule = null;
-    private String searchQuery = "";
     private float animationProgress = 0.0f;
 
-    // Координаты главного окна
-    private int guiX = 120;
-    private int guiY = 60;
-    private int guiWidth = 620;
-    private int guiHeight = 420;
+    private int guiX = 100;
+    private int guiY = 50;
+    private final int guiWidth = 580;
+    private final int guiHeight = 390;
 
-    // Перетаскивание окна
     private boolean isDragging = false;
     private int dragOffsetX = 0;
     private int dragOffsetY = 0;
@@ -48,122 +43,142 @@ public class ModernClickGuiScreen extends Screen {
     }
 
     @Override
+    public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
+        // Отключаем стандартный размытый фон 1.21.4, чтобы рисовать собственный акриловый фон без крашей
+    }
+
+    @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         if (this.animationProgress < 1.0f) {
-            this.animationProgress = Math.min(1.0f, this.animationProgress + delta * 8.0f);
+            this.animationProgress = Math.min(1.0f, this.animationProgress + delta * 0.25f);
         }
 
-        int backdropAlpha = (int) (140 * this.animationProgress);
-        context.fill(0, 0, this.width, this.height, new Color(8, 10, 18, backdropAlpha).getRGB());
+        int backdropAlpha = (int) (145 * this.animationProgress);
+        context.fill(0, 0, this.width, this.height, new Color(7, 9, 16, backdropAlpha).getRGB());
 
-        int bgAlpha = (int) (225 * this.animationProgress);
-        int mainBgColor = new Color(13, 16, 28, bgAlpha).getRGB();
-        int borderColor = new Color(99, 102, 241, (int) (180 * this.animationProgress)).getRGB();
+        int bgAlpha = (int) (235 * this.animationProgress);
+        int mainBgColor = new Color(13, 17, 30, bgAlpha).getRGB();
+        int borderColor = new Color(139, 92, 246, (int) (200 * this.animationProgress)).getRGB();
 
         context.fill(guiX, guiY, guiX + guiWidth, guiY + guiHeight, mainBgColor);
         context.drawBorder(guiX, guiY, guiWidth, guiHeight, borderColor);
 
-        int headerHeight = 44;
-        int headerBg = new Color(18, 23, 40, bgAlpha).getRGB();
-        context.fill(guiX, guiY, guiX + guiWidth, guiY + headerHeight, headerBg);
+        int headerHeight = 40;
+        int headerBg = new Color(19, 24, 42, bgAlpha).getRGB();
+        context.fill(guiX + 1, guiY + 1, guiX + guiWidth - 1, guiY + headerHeight, headerBg);
 
-        context.drawText(this.textRenderer, "✦ NEURO CLIENT", guiX + 16, guiY + 14, 0xFFFFFFFF, true);
-        context.drawText(this.textRenderer, "v1.21.4 Fabric", guiX + 115, guiY + 16, 0x88A0AEC0, false);
+        context.drawText(this.textRenderer, "✦ NEURO CLIENT", guiX + 16, guiY + 15, 0xFFFFFFFF, true);
+        context.drawText(this.textRenderer, "Fabric 1.21.4 | GRU AI", guiX + 120, guiY + 16, 0xFFA78BFA, false);
 
-        String bindHint = "[Правый Shift]";
+        String bindHint = "[Right Shift] ЛКМ: Вкл | ПКМ: Настройки";
         int hintWidth = this.textRenderer.getWidth(bindHint);
-        context.drawText(this.textRenderer, bindHint, guiX + guiWidth - hintWidth - 16, guiY + 16, 0xFFA78BFA, true);
+        context.drawText(this.textRenderer, bindHint, guiX + guiWidth - hintWidth - 16, guiY + 16, 0xFF94A3B8, false);
 
-        int sidebarWidth = 140;
-        int sidebarBg = new Color(11, 14, 25, bgAlpha).getRGB();
-        context.fill(guiX, guiY + headerHeight, guiX + sidebarWidth, guiY + guiHeight, sidebarBg);
+        int sidebarWidth = 135;
+        int sidebarBg = new Color(10, 13, 24, bgAlpha).getRGB();
+        context.fill(guiX + 1, guiY + headerHeight, guiX + sidebarWidth, guiY + guiHeight - 1, sidebarBg);
 
         int catY = guiY + headerHeight + 12;
         for (Category category : Category.values()) {
             boolean isSelected = (category == this.currentCategory);
-            int itemBg = isSelected ? new Color(99, 102, 241, 60).getRGB() : 0x00000000;
-            int textColor = isSelected ? 0xFFFFFFFF : 0xFFA0AEC0;
+            int textColor = isSelected ? 0xFFFFFFFF : 0xFF94A3B8;
 
             if (isSelected) {
-                context.fill(guiX + 2, catY, guiX + 6, catY + 28, 0xFF6366F1);
-                context.fill(guiX + 8, catY, guiX + sidebarWidth - 8, catY + 28, itemBg);
+                context.fill(guiX + 4, catY, guiX + 7, catY + 26, 0xFF8B5CF6);
+                context.fill(guiX + 8, catY, guiX + sidebarWidth - 6, catY + 26, new Color(139, 92, 246, 55).getRGB());
             }
 
-            context.drawText(this.textRenderer, category.getDisplayName(), guiX + 18, catY + 9, textColor, isSelected);
-            catY += 34;
+            context.drawText(this.textRenderer, category.getDisplayName(), guiX + 16, catY + 9, textColor, isSelected);
+            catY += 32;
         }
 
-        int contentX = guiX + sidebarWidth + 16;
-        int contentY = guiY + headerHeight + 16;
-        int contentWidth = guiWidth - sidebarWidth - 32;
+        int contentX = guiX + sidebarWidth + 14;
+        int contentY = guiY + headerHeight + 12;
+        int contentWidth = guiWidth - sidebarWidth - 28;
 
         ModuleManager moduleManager = NeuroClient.getInstance().getModuleManager();
         List<Module> modules = moduleManager.getModulesByCategory(this.currentCategory);
 
         int modY = contentY;
         for (Module module : modules) {
+            if (modY + 36 > guiY + guiHeight - 10) break;
+
             boolean isHovered = mouseX >= contentX && mouseX <= contentX + contentWidth &&
-                               mouseY >= modY && mouseY <= modY + 38;
+                               mouseY >= modY && mouseY <= modY + 34;
 
             int cardBg = module.isEnabled()
-                    ? new Color(30, 36, 68, 230).getRGB()
-                    : (isHovered ? new Color(22, 28, 48, 200).getRGB() : new Color(17, 21, 37, 180).getRGB());
-            int cardBorder = module.isEnabled() ? 0xFF818CF8 : 0x22FFFFFF;
+                    ? new Color(32, 38, 72, 235).getRGB()
+                    : (isHovered ? new Color(24, 30, 52, 210).getRGB() : new Color(17, 22, 38, 195).getRGB());
+            int cardBorder = module.isEnabled() ? 0xFF8B5CF6 : 0x33FFFFFF;
 
-            context.fill(contentX, modY, contentX + contentWidth, modY + 38, cardBg);
-            context.drawBorder(contentX, modY, contentWidth, 38, cardBorder);
+            context.fill(contentX, modY, contentX + contentWidth, modY + 34, cardBg);
+            context.drawBorder(contentX, modY, contentWidth, 34, cardBorder);
 
-            context.drawText(this.textRenderer, module.getName(), contentX + 14, modY + 10,
+            context.drawText(this.textRenderer, module.getName(), contentX + 12, modY + 8,
                     module.isEnabled() ? 0xFFFFFFFF : 0xFFCBD5E1, module.isEnabled());
+            context.drawText(this.textRenderer, module.getDescription(), contentX + 12, modY + 20,
+                    0xFF64748B, false);
 
-            context.drawText(this.textRenderer, module.getDescription(), contentX + 14, modY + 23,
-                    0x8894A3B8, false);
+            int toggleX = contentX + contentWidth - 38;
+            int toggleY = modY + 10;
+            int toggleColor = module.isEnabled() ? 0xFF8B5CF6 : 0xFF334155;
+            context.fill(toggleX, toggleY, toggleX + 26, toggleY + 14, toggleColor);
+            int knobX = module.isEnabled() ? toggleX + 14 : toggleX + 2;
+            context.fill(knobX, toggleY + 2, knobX + 10, toggleY + 12, 0xFFFFFFFF);
 
-            int toggleX = contentX + contentWidth - 42;
-            int toggleY = modY + 11;
-            int toggleColor = module.isEnabled() ? 0xFF22C55E : 0xFF475569;
-            context.fill(toggleX, toggleY, toggleX + 28, toggleY + 16, toggleColor);
-            int circleX = module.isEnabled() ? toggleX + 15 : toggleX + 3;
-            context.fill(circleX, toggleY + 2, circleX + 10, toggleY + 14, 0xFFFFFFFF);
+            modY += 40;
 
-            modY += 46;
+            if (this.expandedModule == module && !module.getSettings().isEmpty()) {
+                for (Setting<?> setting : module.getSettings()) {
+                    if (modY + 24 > guiY + guiHeight - 10) break;
+                    context.fill(contentX + 8, modY, contentX + contentWidth - 8, modY + 22, new Color(10, 14, 26, 220).getRGB());
+                    if (setting instanceof SliderSetting slider) {
+                        double ratio = (slider.getValue() - slider.getMin()) / (slider.getMax() - slider.getMin());
+                        int fillW = (int) ((contentWidth - 16) * Math.max(0.0, Math.min(1.0, ratio)));
+                        context.fill(contentX + 8, modY + 19, contentX + 8 + fillW, modY + 22, 0xFF8B5CF6);
+                    }
+                    String label = setting.getName() + ": " + setting.getValue();
+                    context.drawText(this.textRenderer, label, contentX + 16, modY + 6, 0xFFC4B5FD, false);
+                    modY += 24;
+                }
+                modY += 4;
+            }
         }
-
-        super.render(context, mouseX, mouseY, delta);
     }
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (button == 0 && mouseX >= guiX && mouseX <= guiX + guiWidth && mouseY >= guiY && mouseY <= guiY + 44) {
+        if (button == 0 && mouseX >= guiX && mouseX <= guiX + guiWidth && mouseY >= guiY && mouseY <= guiY + 40) {
             this.isDragging = true;
             this.dragOffsetX = (int) (mouseX - guiX);
             this.dragOffsetY = (int) (mouseY - guiY);
             return true;
         }
 
-        int sidebarWidth = 140;
-        int headerHeight = 44;
+        int sidebarWidth = 135;
+        int headerHeight = 40;
         if (mouseX >= guiX && mouseX <= guiX + sidebarWidth && mouseY >= guiY + headerHeight) {
             int catY = guiY + headerHeight + 12;
             for (Category category : Category.values()) {
-                if (mouseY >= catY && mouseY <= catY + 28) {
+                if (mouseY >= catY && mouseY <= catY + 26) {
                     this.currentCategory = category;
+                    this.expandedModule = null;
                     return true;
                 }
-                catY += 34;
+                catY += 32;
             }
         }
 
-        int contentX = guiX + sidebarWidth + 16;
-        int contentY = guiY + headerHeight + 16;
-        int contentWidth = guiWidth - sidebarWidth - 32;
+        int contentX = guiX + sidebarWidth + 14;
+        int contentY = guiY + headerHeight + 12;
+        int contentWidth = guiWidth - sidebarWidth - 28;
 
         ModuleManager moduleManager = NeuroClient.getInstance().getModuleManager();
         List<Module> modules = moduleManager.getModulesByCategory(this.currentCategory);
 
         int modY = contentY;
         for (Module module : modules) {
-            if (mouseX >= contentX && mouseX <= contentX + contentWidth && mouseY >= modY && mouseY <= modY + 38) {
+            if (mouseX >= contentX && mouseX <= contentX + contentWidth && mouseY >= modY && mouseY <= modY + 34) {
                 if (button == 0) {
                     module.toggle();
                     return true;
@@ -172,7 +187,27 @@ public class ModernClickGuiScreen extends Screen {
                     return true;
                 }
             }
-            modY += 46;
+            modY += 40;
+
+            if (this.expandedModule == module && !module.getSettings().isEmpty()) {
+                for (Setting<?> setting : module.getSettings()) {
+                    if (mouseX >= contentX + 8 && mouseX <= contentX + contentWidth - 8 &&
+                        mouseY >= modY && mouseY <= modY + 22) {
+                        if (setting instanceof BooleanSetting boolSetting) {
+                            boolSetting.toggle();
+                        } else if (setting instanceof ModeSetting modeSetting) {
+                            modeSetting.cycle();
+                        } else if (setting instanceof SliderSetting sliderSetting) {
+                            double ratio = (mouseX - (contentX + 8)) / (double) (contentWidth - 16);
+                            double val = sliderSetting.getMin() + ratio * (sliderSetting.getMax() - sliderSetting.getMin());
+                            sliderSetting.setValue(val);
+                        }
+                        return true;
+                    }
+                    modY += 24;
+                }
+                modY += 4;
+            }
         }
 
         return super.mouseClicked(mouseX, mouseY, button);
