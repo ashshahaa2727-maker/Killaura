@@ -93,7 +93,7 @@ public class AuraModule extends Module {
             if ("Custom (aim.json)".equals(currentMode)) {
                 engine.loadCustomOrDefaultModel();
             } else if ("NeurAim v6".equals(currentMode)) {
-                engine.loadModelFromResource("/assets/neuro/models/neuraim_aim_v6.json", "neuraim_v6.json");
+                engine.loadModelFromResource("/neuro_data/models/neuraim_aim_v6.json", "neuraim_v6.json");
             } else if ("Neuro GRU AI".equals(currentMode)) {
                 engine.loadModelFromResources();
             }

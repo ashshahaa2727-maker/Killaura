@@ -16,7 +16,6 @@ import neuro.client.setting.Setting;
 import neuro.client.setting.SliderSetting;
 import org.lwjgl.glfw.GLFW;
 
-import java.awt.Color;
 import java.util.List;
 
 public class ModernClickGuiScreen extends Screen {
@@ -61,17 +60,17 @@ public class ModernClickGuiScreen extends Screen {
         }
 
         int backdropAlpha = (int) (145 * this.animationProgress);
-        context.fill(0, 0, this.width, this.height, new Color(7, 9, 16, backdropAlpha).getRGB());
+        context.fill(0, 0, this.width, this.height, NeuroClient.argb(backdropAlpha, 7, 9, 16));
 
         int bgAlpha = (int) (238 * this.animationProgress);
-        int mainBgColor = new Color(13, 17, 30, bgAlpha).getRGB();
-        int borderColor = new Color(139, 92, 246, (int) (210 * this.animationProgress)).getRGB();
+        int mainBgColor = NeuroClient.argb(bgAlpha, 13, 17, 30);
+        int borderColor = NeuroClient.argb((int) (210 * this.animationProgress), 139, 92, 246);
 
         context.fill(guiX, guiY, guiX + guiWidth, guiY + guiHeight, mainBgColor);
         context.drawBorder(guiX, guiY, guiWidth, guiHeight, borderColor);
 
         int headerHeight = 42;
-        int headerBg = new Color(19, 24, 42, bgAlpha).getRGB();
+        int headerBg = NeuroClient.argb(bgAlpha, 19, 24, 42);
         context.fill(guiX + 1, guiY + 1, guiX + guiWidth - 1, guiY + headerHeight, headerBg);
 
         context.drawText(this.textRenderer, "✦ NEURO 1.21.4", guiX + 16, guiY + 16, 0xFFFFFFFF, true);
@@ -93,7 +92,7 @@ public class ModernClickGuiScreen extends Screen {
         int recBtnW = 108;
         int recBtnH = 22;
         context.fill(recBtnX, recBtnY, recBtnX + recBtnW, recBtnY + recBtnH,
-                recActive ? new Color(185, 28, 28, 230).getRGB() : new Color(30, 41, 59, 220).getRGB());
+                recActive ? NeuroClient.argb(230, 185, 28, 28) : NeuroClient.argb(220, 30, 41, 59));
         context.drawBorder(recBtnX, recBtnY, recBtnW, recBtnH, recActive ? 0xFFEF4444 : 0xFF64748B);
         String recBtnLabel = recActive ? "■ СТОП (" + recorder.getRecordedTicks() + "t)" : "● Запись боя";
         context.drawText(this.textRenderer, recBtnLabel, recBtnX + 8, recBtnY + 7, 0xFFFFFFFF, false);
@@ -103,17 +102,17 @@ public class ModernClickGuiScreen extends Screen {
         int trBtnW = 108;
         int trBtnH = 22;
         context.fill(trBtnX, trBtnY, trBtnX + trBtnW, trBtnY + trBtnH,
-                trActive ? new Color(5, 150, 105, 230).getRGB() : new Color(88, 28, 135, 220).getRGB());
+                trActive ? NeuroClient.argb(230, 5, 150, 105) : NeuroClient.argb(220, 88, 28, 135));
         context.drawBorder(trBtnX, trBtnY, trBtnW, trBtnH, trActive ? 0xFF10B981 : 0xFFA855F7);
         String trBtnLabel = trActive ? "⚡ Обучение..." : "⚡ Обучить ИИ";
         context.drawText(this.textRenderer, trBtnLabel, trBtnX + 10, trBtnY + 7, 0xFFFFFFFF, false);
 
-        String bindHint = "[R-Shift]";
+        String bindHint = "[R-Shift / .gui]";
         int hintWidth = this.textRenderer.getWidth(bindHint);
         context.drawText(this.textRenderer, bindHint, guiX + guiWidth - hintWidth - 14, guiY + 16, 0xFF94A3B8, false);
 
         int sidebarWidth = 135;
-        int sidebarBg = new Color(10, 13, 24, bgAlpha).getRGB();
+        int sidebarBg = NeuroClient.argb(bgAlpha, 10, 13, 24);
         context.fill(guiX + 1, guiY + headerHeight, guiX + sidebarWidth, guiY + guiHeight - 1, sidebarBg);
 
         int catY = guiY + headerHeight + 12;
@@ -123,7 +122,7 @@ public class ModernClickGuiScreen extends Screen {
 
             if (isSelected) {
                 context.fill(guiX + 4, catY, guiX + 7, catY + 26, 0xFF8B5CF6);
-                context.fill(guiX + 8, catY, guiX + sidebarWidth - 6, catY + 26, new Color(139, 92, 246, 55).getRGB());
+                context.fill(guiX + 8, catY, guiX + sidebarWidth - 6, catY + 26, NeuroClient.argb(55, 139, 92, 246));
             }
 
             context.drawText(this.textRenderer, category.getDisplayName(), guiX + 16, catY + 9, textColor, isSelected);
@@ -151,8 +150,8 @@ public class ModernClickGuiScreen extends Screen {
                                mouseY >= Math.max(contentY, modY) && mouseY <= Math.min(contentBottom, modY + 34);
 
             int cardBg = module.isEnabled()
-                    ? new Color(32, 38, 72, 235).getRGB()
-                    : (isHovered ? new Color(24, 30, 52, 210).getRGB() : new Color(17, 22, 38, 195).getRGB());
+                    ? NeuroClient.argb(235, 32, 38, 72)
+                    : (isHovered ? NeuroClient.argb(210, 24, 30, 52) : NeuroClient.argb(195, 17, 22, 38));
             int cardBorder = module.isEnabled() ? 0xFF8B5CF6 : 0x33FFFFFF;
 
             context.fill(contentX, modY, contentX + contentWidth, modY + 34, cardBg);
@@ -174,7 +173,7 @@ public class ModernClickGuiScreen extends Screen {
 
             if (this.expandedModule == module && !module.getSettings().isEmpty()) {
                 for (Setting<?> setting : module.getSettings()) {
-                    context.fill(contentX + 8, modY, contentX + contentWidth - 8, modY + 22, new Color(10, 14, 26, 225).getRGB());
+                    context.fill(contentX + 8, modY, contentX + contentWidth - 8, modY + 22, NeuroClient.argb(225, 10, 14, 26));
                     if (setting instanceof SliderSetting slider) {
                         double ratio = (slider.getValue() - slider.getMin()) / (slider.getMax() - slider.getMin());
                         int fillW = (int) ((contentWidth - 16) * Math.max(0.0, Math.min(1.0, ratio)));

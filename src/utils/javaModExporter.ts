@@ -184,13 +184,13 @@ rootProject.name = 'neuro-fabric-1.21.4'
     name: 'fabric.mod.json',
     category: 'config',
     language: 'json',
-    description: 'Манифест мода в src/main/resources для Fabric Loader 0.16+ и Minecraft 1.21.4',
+    description: 'Манифест мода в src/main/resources для Fabric Loader 0.16+ и Minecraft 1.21.4 (без блокирующих миксинов)',
     content: `{
   "schemaVersion": 1,
   "id": "neuro",
   "version": "\${version}",
   "name": "Neuro Client 1.21.4",
-  "description": "Элитный клиент для Minecraft Fabric 1.21.4 с открытием на Правый Shift, кастомными шейдерами и GRU нейросетью аима.",
+  "description": "Элитный клиент для Minecraft Fabric 1.21.4 с открытием на Правый Shift (.gui), кастомными шейдерами и обучаемой GRU нейросетью аима.",
   "authors": [
     "Neuro Team"
   ],
@@ -204,9 +204,6 @@ rootProject.name = 'neuro-fabric-1.21.4'
       "neuro.client.NeuroClient"
     ]
   },
-  "mixins": [
-    "neuro.mixins.json"
-  ],
   "depends": {
     "fabricloader": ">=0.16.0",
     "minecraft": "~1.21.4",
@@ -216,33 +213,13 @@ rootProject.name = 'neuro-fabric-1.21.4'
 }`,
   },
 
-  // 6. src/main/resources/neuro.mixins.json
-  {
-    path: 'src/main/resources/neuro.mixins.json',
-    name: 'neuro.mixins.json',
-    category: 'config',
-    language: 'json',
-    description: 'Конфигурация миксинов (Java 21)',
-    content: `{
-  "required": false,
-  "minVersion": "0.8",
-  "package": "neuro.client.mixin",
-  "compatibilityLevel": "JAVA_21",
-  "mixins": [],
-  "client": [],
-  "injectors": {
-    "defaultRequire": 1
-  }
-}`,
-  },
-
-  // 7. NeuroClient.java (Main Client Entrypoint with RIGHT SHIFT KEYBIND, HUD & Trainable Killaura Subsystems)
+  // 6. NeuroClient.java (Main Client Entrypoint — Zero java.awt.Color, Async Model Init, Right Shift + .gui)
   {
     path: 'src/main/java/neuro/client/NeuroClient.java',
     name: 'NeuroClient.java',
     category: 'core',
     language: 'java',
-    description: 'Главный класс мода: регистрация бинда на Правый Shift (GLFW_KEY_RIGHT_SHIFT), менеджер команд .neuro, рекордер датасетов, тренер ИИ и HUD',
+    description: 'Главный класс мода: без java.awt.Color (не зависает на PojavLauncher/macOS/Mojang Splash), асинхронная подгрузка весов GRU, Правый Shift и HUD',
     content: `package neuro.client;
 
 import net.fabricmc.api.ClientModInitializer;
@@ -270,8 +247,8 @@ import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.awt.Color;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 @Environment(EnvType.CLIENT)
 @SuppressWarnings("deprecation")
@@ -292,10 +269,18 @@ public final class NeuroClient implements ClientModInitializer {
     private NeuroTrainerManager trainerManager;
     private NeuroCommandManager commandManager;
 
+    /**
+     * Быстрый побитовый ARGB без использования java.awt.Color
+     * (исключает зависание AWT Toolkit на логотипе Mojang Studios на телефонах PojavLauncher/Zalith и ПК).
+     */
+    public static int argb(int a, int r, int g, int b) {
+        return ((a & 0xFF) << 24) | ((r & 0xFF) << 16) | ((g & 0xFF) << 8) | (b & 0xFF);
+    }
+
     @Override
     public void onInitializeClient() {
         instance = this;
-        LOGGER.info("[Neuro] Инициализация обучаемого клиента под Fabric 1.21.4 (Java 21)...");
+        LOGGER.info("[Neuro] Быстрая неблокирующая инициализация клиента под Fabric 1.21.4 (Java 21)...");
 
         this.clickGuiKeyBinding = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.neuro.open_clickgui",
@@ -312,11 +297,19 @@ public final class NeuroClient implements ClientModInitializer {
         this.moduleManager = new ModuleManager();
         this.shaderManager = new ShaderManager();
 
-        this.neuroEngine.loadModelFromResources();
-        this.neuroClicks.loadFromResources();
-        this.trainerManager.extractTrainerScripts();
         this.commandManager.register();
         this.shaderManager.initShaders();
+
+        // Асинхронная загрузка нейросетевых матриц, чтобы не задерживать экран загрузки Mojang Studios
+        CompletableFuture.runAsync(() -> {
+            try {
+                this.neuroEngine.loadModelFromResources();
+                this.neuroClicks.loadFromResources();
+                this.trainerManager.extractTrainerScripts();
+            } catch (Throwable t) {
+                LOGGER.warn("[Neuro] Фоновая инициализация ресурсов: {}", t.getMessage());
+            }
+        });
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null) return;
@@ -338,14 +331,14 @@ public final class NeuroClient implements ClientModInitializer {
             renderHud(client, drawContext);
         });
 
-        LOGGER.info("[Neuro] Успешно инициализирован! [Правый Shift] — меню | [.neuro help] — обучение Киллауры.");
+        LOGGER.info("[Neuro] Готово! [Правый Shift] или [.gui] в чате — меню | [.neuro help] — обучение Киллауры.");
     }
 
     private void renderHud(MinecraftClient client, DrawContext context) {
         String modelTag = this.neuroEngine != null ? this.neuroEngine.getLoadedModelName() : "default.json";
         String watermark = "✦ NEURO 1.21.4 | " + client.getCurrentFps() + " FPS | AI: " + modelTag;
         int wmWidth = client.textRenderer.getWidth(watermark) + 14;
-        context.fill(8, 8, 8 + wmWidth, 26, new Color(13, 17, 30, 220).getRGB());
+        context.fill(8, 8, 8 + wmWidth, 26, argb(220, 13, 17, 30));
         context.drawBorder(8, 8, wmWidth, 18, 0xFF8B5CF6);
         context.drawText(client.textRenderer, watermark, 15, 13, 0xFFFFFFFF, true);
 
@@ -355,7 +348,7 @@ public final class NeuroClient implements ClientModInitializer {
                     + this.datasetRecorder.getRecordedTicks() + " тиков (эпизодов: "
                     + this.datasetRecorder.getValidEpisodes() + ")";
             int recW = client.textRenderer.getWidth(recText) + 14;
-            context.fill(8, statusY, 8 + recW, statusY + 18, new Color(45, 12, 22, 225).getRGB());
+            context.fill(8, statusY, 8 + recW, statusY + 18, argb(225, 45, 12, 22));
             context.drawBorder(8, statusY, recW, 18, 0xFFEF4444);
             context.drawText(client.textRenderer, recText, 15, statusY + 5, 0xFFFCA5A5, true);
             statusY += 22;
@@ -364,7 +357,7 @@ public final class NeuroClient implements ClientModInitializer {
         if (this.trainerManager != null && this.trainerManager.isTraining()) {
             String trText = "⚡ TRAIN: " + this.trainerManager.getLastStatus();
             int trW = client.textRenderer.getWidth(trText) + 14;
-            context.fill(8, statusY, 8 + trW, statusY + 18, new Color(14, 36, 28, 225).getRGB());
+            context.fill(8, statusY, 8 + trW, statusY + 18, argb(225, 14, 36, 28));
             context.drawBorder(8, statusY, trW, 18, 0xFF10B981);
             context.drawText(client.textRenderer, trText, 15, statusY + 5, 0xFF6EE7B7, true);
         }
@@ -376,7 +369,7 @@ public final class NeuroClient implements ClientModInitializer {
             String name = mod.getName();
             int tw = client.textRenderer.getWidth(name) + 12;
             int x = screenWidth - tw - 8;
-            context.fill(x, yOffset, x + tw, yOffset + 15, new Color(13, 17, 30, 205).getRGB());
+            context.fill(x, yOffset, x + tw, yOffset + 15, argb(205, 13, 17, 30));
             context.fill(x + tw - 2, yOffset, x + tw, yOffset + 15, 0xFF8B5CF6);
             context.drawText(client.textRenderer, name, x + 5, yOffset + 4, 0xFFE2E8F0, true);
             yOffset += 17;
@@ -389,7 +382,7 @@ public final class NeuroClient implements ClientModInitializer {
             int thY = client.getWindow().getScaledHeight() / 2 + 12;
             int thW = 152;
             int thH = 44;
-            context.fill(thX, thY, thX + thW, thY + thH, new Color(13, 17, 30, 225).getRGB());
+            context.fill(thX, thY, thX + thW, thY + thH, argb(225, 13, 17, 30));
             context.drawBorder(thX, thY, thW, thH, 0xFF8B5CF6);
             String tName = target.getName().getString();
             float hp = Math.max(0.0f, target.getHealth());
@@ -849,7 +842,7 @@ public class AuraModule extends Module {
             if ("Custom (aim.json)".equals(currentMode)) {
                 engine.loadCustomOrDefaultModel();
             } else if ("NeurAim v6".equals(currentMode)) {
-                engine.loadModelFromResource("/assets/neuro/models/neuraim_aim_v6.json", "neuraim_v6.json");
+                engine.loadModelFromResource("/neuro_data/models/neuraim_aim_v6.json", "neuraim_v6.json");
             } else if ("Neuro GRU AI".equals(currentMode)) {
                 engine.loadModelFromResources();
             }
@@ -1482,7 +1475,6 @@ import neuro.client.setting.Setting;
 import neuro.client.setting.SliderSetting;
 import org.lwjgl.glfw.GLFW;
 
-import java.awt.Color;
 import java.util.List;
 
 public class ModernClickGuiScreen extends Screen {
@@ -1527,17 +1519,17 @@ public class ModernClickGuiScreen extends Screen {
         }
 
         int backdropAlpha = (int) (145 * this.animationProgress);
-        context.fill(0, 0, this.width, this.height, new Color(7, 9, 16, backdropAlpha).getRGB());
+        context.fill(0, 0, this.width, this.height, NeuroClient.argb(backdropAlpha, 7, 9, 16));
 
         int bgAlpha = (int) (238 * this.animationProgress);
-        int mainBgColor = new Color(13, 17, 30, bgAlpha).getRGB();
-        int borderColor = new Color(139, 92, 246, (int) (210 * this.animationProgress)).getRGB();
+        int mainBgColor = NeuroClient.argb(bgAlpha, 13, 17, 30);
+        int borderColor = NeuroClient.argb((int) (210 * this.animationProgress), 139, 92, 246);
 
         context.fill(guiX, guiY, guiX + guiWidth, guiY + guiHeight, mainBgColor);
         context.drawBorder(guiX, guiY, guiWidth, guiHeight, borderColor);
 
         int headerHeight = 42;
-        int headerBg = new Color(19, 24, 42, bgAlpha).getRGB();
+        int headerBg = NeuroClient.argb(bgAlpha, 19, 24, 42);
         context.fill(guiX + 1, guiY + 1, guiX + guiWidth - 1, guiY + headerHeight, headerBg);
 
         context.drawText(this.textRenderer, "✦ NEURO 1.21.4", guiX + 16, guiY + 16, 0xFFFFFFFF, true);
@@ -1559,7 +1551,7 @@ public class ModernClickGuiScreen extends Screen {
         int recBtnW = 108;
         int recBtnH = 22;
         context.fill(recBtnX, recBtnY, recBtnX + recBtnW, recBtnY + recBtnH,
-                recActive ? new Color(185, 28, 28, 230).getRGB() : new Color(30, 41, 59, 220).getRGB());
+                recActive ? NeuroClient.argb(230, 185, 28, 28) : NeuroClient.argb(220, 30, 41, 59));
         context.drawBorder(recBtnX, recBtnY, recBtnW, recBtnH, recActive ? 0xFFEF4444 : 0xFF64748B);
         String recBtnLabel = recActive ? "■ СТОП (" + recorder.getRecordedTicks() + "t)" : "● Запись боя";
         context.drawText(this.textRenderer, recBtnLabel, recBtnX + 8, recBtnY + 7, 0xFFFFFFFF, false);
@@ -1569,17 +1561,17 @@ public class ModernClickGuiScreen extends Screen {
         int trBtnW = 108;
         int trBtnH = 22;
         context.fill(trBtnX, trBtnY, trBtnX + trBtnW, trBtnY + trBtnH,
-                trActive ? new Color(5, 150, 105, 230).getRGB() : new Color(88, 28, 135, 220).getRGB());
+                trActive ? NeuroClient.argb(230, 5, 150, 105) : NeuroClient.argb(220, 88, 28, 135));
         context.drawBorder(trBtnX, trBtnY, trBtnW, trBtnH, trActive ? 0xFF10B981 : 0xFFA855F7);
         String trBtnLabel = trActive ? "⚡ Обучение..." : "⚡ Обучить ИИ";
         context.drawText(this.textRenderer, trBtnLabel, trBtnX + 10, trBtnY + 7, 0xFFFFFFFF, false);
 
-        String bindHint = "[R-Shift]";
+        String bindHint = "[R-Shift / .gui]";
         int hintWidth = this.textRenderer.getWidth(bindHint);
         context.drawText(this.textRenderer, bindHint, guiX + guiWidth - hintWidth - 14, guiY + 16, 0xFF94A3B8, false);
 
         int sidebarWidth = 135;
-        int sidebarBg = new Color(10, 13, 24, bgAlpha).getRGB();
+        int sidebarBg = NeuroClient.argb(bgAlpha, 10, 13, 24);
         context.fill(guiX + 1, guiY + headerHeight, guiX + sidebarWidth, guiY + guiHeight - 1, sidebarBg);
 
         int catY = guiY + headerHeight + 12;
@@ -1589,7 +1581,7 @@ public class ModernClickGuiScreen extends Screen {
 
             if (isSelected) {
                 context.fill(guiX + 4, catY, guiX + 7, catY + 26, 0xFF8B5CF6);
-                context.fill(guiX + 8, catY, guiX + sidebarWidth - 6, catY + 26, new Color(139, 92, 246, 55).getRGB());
+                context.fill(guiX + 8, catY, guiX + sidebarWidth - 6, catY + 26, NeuroClient.argb(55, 139, 92, 246));
             }
 
             context.drawText(this.textRenderer, category.getDisplayName(), guiX + 16, catY + 9, textColor, isSelected);
@@ -1617,8 +1609,8 @@ public class ModernClickGuiScreen extends Screen {
                                mouseY >= Math.max(contentY, modY) && mouseY <= Math.min(contentBottom, modY + 34);
 
             int cardBg = module.isEnabled()
-                    ? new Color(32, 38, 72, 235).getRGB()
-                    : (isHovered ? new Color(24, 30, 52, 210).getRGB() : new Color(17, 22, 38, 195).getRGB());
+                    ? NeuroClient.argb(235, 32, 38, 72)
+                    : (isHovered ? NeuroClient.argb(210, 24, 30, 52) : NeuroClient.argb(195, 17, 22, 38));
             int cardBorder = module.isEnabled() ? 0xFF8B5CF6 : 0x33FFFFFF;
 
             context.fill(contentX, modY, contentX + contentWidth, modY + 34, cardBg);
@@ -1640,7 +1632,7 @@ public class ModernClickGuiScreen extends Screen {
 
             if (this.expandedModule == module && !module.getSettings().isEmpty()) {
                 for (Setting<?> setting : module.getSettings()) {
-                    context.fill(contentX + 8, modY, contentX + contentWidth - 8, modY + 22, new Color(10, 14, 26, 225).getRGB());
+                    context.fill(contentX + 8, modY, contentX + contentWidth - 8, modY + 22, NeuroClient.argb(225, 10, 14, 26));
                     if (setting instanceof SliderSetting slider) {
                         double ratio = (slider.getValue() - slider.getMin()) / (slider.getMax() - slider.getMin());
                         int fillW = (int) ((contentWidth - 16) * Math.max(0.0, Math.min(1.0, ratio)));
@@ -1894,7 +1886,7 @@ public class NeuroAuraEngine {
                 return;
             }
         }
-        loadModelFromResource("/assets/neuro/models/default.json", "default.json");
+        loadModelFromResource("/neuro_data/models/default.json", "default.json");
     }
 
     public void loadCustomOrDefaultModel() {
@@ -1910,7 +1902,7 @@ public class NeuroAuraEngine {
                 return;
             }
         }
-        loadModelFromResource("/assets/neuro/models/default.json", "default.json");
+        loadModelFromResource("/neuro_data/models/default.json", "default.json");
     }
 
     public boolean loadModelFromResource(String resourcePath, String label) {
@@ -2503,7 +2495,7 @@ public class NeuroClicks {
     private int ticksSinceHit = 99;
 
     public void loadFromResources() {
-        try (InputStream is = NeuroClicks.class.getResourceAsStream("/assets/neuro/models/neuro_clicks.json")) {
+        try (InputStream is = NeuroClicks.class.getResourceAsStream("/neuro_data/models/neuro_clicks.json")) {
             if (is == null) {
                 LOGGER.warn("[NeuroClicks] Файл neuro_clicks.json не найден, используются базовые распределения.");
                 return;
@@ -2932,8 +2924,8 @@ public class NeuroTrainerManager {
         try {
             Path trainerDir = client.runDirectory.toPath().resolve("neuro").resolve("trainer");
             Files.createDirectories(trainerDir);
-            copyResource("/assets/neuro/trainer/common.py", trainerDir.resolve("common.py"));
-            copyResource("/assets/neuro/trainer/train_aura.py", trainerDir.resolve("train_aura.py"));
+            copyResource("/neuro_data/trainer/common.py", trainerDir.resolve("common.py"));
+            copyResource("/neuro_data/trainer/train_aura.py", trainerDir.resolve("train_aura.py"));
         } catch (Exception e) {
             LOGGER.warn("[NeuroTrainer] Не удалось распаковать скрипты тренера: {}", e.getMessage());
         }
@@ -3211,6 +3203,7 @@ import net.fabricmc.fabric.api.client.message.v1.ClientSendMessageEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.Text;
 import neuro.client.NeuroClient;
+import neuro.client.gui.ModernClickGuiScreen;
 import neuro.client.module.combat.AuraModule;
 
 import java.nio.file.DirectoryStream;
@@ -3220,7 +3213,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Перехватывает команды ".neuro ..." в чате на стороне клиента (не отправляя их на сервер).
+ * Перехватывает команды ".neuro ...", ".aura ...", ".gui", ".menu" в чате на стороне клиента (не отправляя их на сервер).
  */
 public class NeuroCommandManager {
 
@@ -3228,6 +3221,13 @@ public class NeuroCommandManager {
         ClientSendMessageEvents.ALLOW_CHAT.register(message -> {
             if (message == null) return true;
             String trimmed = message.trim();
+            if (trimmed.equalsIgnoreCase(".gui") || trimmed.equalsIgnoreCase(".menu")) {
+                MinecraftClient client = MinecraftClient.getInstance();
+                if (client != null) {
+                    client.execute(() -> client.setScreen(new ModernClickGuiScreen()));
+                }
+                return false;
+            }
             if (trimmed.startsWith(".neuro") || trimmed.startsWith(".aura")) {
                 handleCommand(trimmed);
                 return false; // Не отправляем команду в публичный чат сервера
@@ -3250,6 +3250,11 @@ public class NeuroCommandManager {
         AuraModule aura = nc.getModuleManager().getModule(AuraModule.class);
 
         switch (sub) {
+            case "gui":
+            case "menu": {
+                client.execute(() -> client.setScreen(new ModernClickGuiScreen()));
+                break;
+            }
             case "rec":
             case "record": {
                 String sessionName = parts.length > 2 ? parts[2] : "session";
@@ -3280,9 +3285,9 @@ public class NeuroCommandManager {
             case "load": {
                 String modelArg = parts.length > 2 ? parts[2].toLowerCase() : "aim";
                 if ("default".equals(modelArg)) {
-                    engine.loadModelFromResource("/assets/neuro/models/default.json", "default.json");
+                    engine.loadModelFromResource("/neuro_data/models/default.json", "default.json");
                 } else if ("v6".equals(modelArg) || "neuraim".equals(modelArg)) {
-                    engine.loadModelFromResource("/assets/neuro/models/neuraim_aim_v6.json", "neuraim_v6.json");
+                    engine.loadModelFromResource("/neuro_data/models/neuraim_aim_v6.json", "neuraim_v6.json");
                 } else {
                     engine.loadCustomOrDefaultModel();
                 }
@@ -3312,6 +3317,7 @@ public class NeuroCommandManager {
             }
             default: {
                 reply(client, "§d✦ Команды обучаемой Киллауры Neuro 1.21.4:");
+                reply(client, "§e.gui §7или §e.neuro gui §7— открыть меню ClickGUI (удобно на телефоне)");
                 reply(client, "§e.neuro record <имя> §7— начать запись движений Вашей руки в .csv");
                 reply(client, "§e.neuro stop §7— остановить запись и сохранить датасет");
                 reply(client, "§e.neuro train [эпох] §7— обучить нейросеть (GRU+MDN) и загрузить aim.json");
@@ -3367,7 +3373,7 @@ public class ShaderManager {
 
   // 37. GLSL Shader
   {
-    path: 'src/main/resources/assets/neuro/shaders/core/ui_universal.fsh',
+    path: 'src/main/resources/neuro_data/shaders/ui_universal.fsh',
     name: 'ui_universal.fsh',
     category: 'shader',
     language: 'glsl',
@@ -3556,17 +3562,17 @@ zipStorePath=wrapper/dists
 `
   );
 
-  // Fetch full 58KB default.json with trained GRU weights
+  // Fetch full 58KB default.json with trained GRU weights (placed in neuro_data/models so vanilla ModelLoader never hangs on it)
   try {
     const res = await fetch('/assets/neuro_default_model.json');
     if (res.ok) {
       const text = await res.text();
-      zip.file('src/main/resources/assets/neuro/models/default.json', text);
+      zip.file('src/main/resources/neuro_data/models/default.json', text);
     } else {
-      zip.file('src/main/resources/assets/neuro/models/default.json', JSON.stringify(NEURO_METADATA, null, 2));
+      zip.file('src/main/resources/neuro_data/models/default.json', JSON.stringify(NEURO_METADATA, null, 2));
     }
   } catch {
-    zip.file('src/main/resources/assets/neuro/models/default.json', JSON.stringify(NEURO_METADATA, null, 2));
+    zip.file('src/main/resources/neuro_data/models/default.json', JSON.stringify(NEURO_METADATA, null, 2));
   }
 
   // Fetch neuro_clicks.json (crit/ground/sprint W-tap tables)
@@ -3574,7 +3580,7 @@ zipStorePath=wrapper/dists
     const clicksRes = await fetch('/assets/neuro_clicks.json');
     if (clicksRes.ok) {
       const clicksText = await clicksRes.text();
-      zip.file('src/main/resources/assets/neuro/models/neuro_clicks.json', clicksText);
+      zip.file('src/main/resources/neuro_data/models/neuro_clicks.json', clicksText);
     }
   } catch {
     // optional
@@ -3585,7 +3591,7 @@ zipStorePath=wrapper/dists
     const v6Res = await fetch('/assets/neuraim_aim_v6.json');
     if (v6Res.ok) {
       const v6Text = await v6Res.text();
-      zip.file('src/main/resources/assets/neuro/models/neuraim_aim_v6.json', v6Text);
+      zip.file('src/main/resources/neuro_data/models/neuraim_aim_v6.json', v6Text);
     }
   } catch {
     // optional
@@ -3597,13 +3603,13 @@ zipStorePath=wrapper/dists
     if (commonRes.ok) {
       const commonText = await commonRes.text();
       zip.file('trainer/common.py', commonText);
-      zip.file('src/main/resources/assets/neuro/trainer/common.py', commonText);
+      zip.file('src/main/resources/neuro_data/trainer/common.py', commonText);
     }
     const trainRes = await fetch('/assets/trainer/train_aura.py');
     if (trainRes.ok) {
       const trainText = await trainRes.text();
       zip.file('trainer/train_aura.py', trainText);
-      zip.file('src/main/resources/assets/neuro/trainer/train_aura.py', trainText);
+      zip.file('src/main/resources/neuro_data/trainer/train_aura.py', trainText);
     }
   } catch {
     // fallback already added via FABRIC_1214_FILES

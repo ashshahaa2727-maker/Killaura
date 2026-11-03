@@ -3,7 +3,7 @@
   "id": "neuro",
   "version": "${version}",
   "name": "Neuro Client 1.21.4",
-  "description": "Элитный клиент для Minecraft Fabric 1.21.4 с открытием на Правый Shift, кастомными шейдерами и GRU нейросетью аима.",
+  "description": "Элитный клиент для Minecraft Fabric 1.21.4 с открытием на Правый Shift (.gui), кастомными шейдерами и обучаемой GRU нейросетью аима.",
   "authors": [
     "Neuro Team"
   ],
@@ -17,9 +17,6 @@
       "neuro.client.NeuroClient"
     ]
   },
-  "mixins": [
-    "neuro.mixins.json"
-  ],
   "depends": {
     "fabricloader": ">=0.16.0",
     "minecraft": "~1.21.4",

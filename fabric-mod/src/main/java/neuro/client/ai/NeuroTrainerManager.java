@@ -39,8 +39,8 @@ public class NeuroTrainerManager {
         try {
             Path trainerDir = client.runDirectory.toPath().resolve("neuro").resolve("trainer");
             Files.createDirectories(trainerDir);
-            copyResource("/assets/neuro/trainer/common.py", trainerDir.resolve("common.py"));
-            copyResource("/assets/neuro/trainer/train_aura.py", trainerDir.resolve("train_aura.py"));
+            copyResource("/neuro_data/trainer/common.py", trainerDir.resolve("common.py"));
+            copyResource("/neuro_data/trainer/train_aura.py", trainerDir.resolve("train_aura.py"));
         } catch (Exception e) {
             LOGGER.warn("[NeuroTrainer] Не удалось распаковать скрипты тренера: {}", e.getMessage());
         }

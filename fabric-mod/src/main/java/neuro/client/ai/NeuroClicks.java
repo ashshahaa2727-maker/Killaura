@@ -41,7 +41,7 @@ public class NeuroClicks {
     private int ticksSinceHit = 99;
 
     public void loadFromResources() {
-        try (InputStream is = NeuroClicks.class.getResourceAsStream("/assets/neuro/models/neuro_clicks.json")) {
+        try (InputStream is = NeuroClicks.class.getResourceAsStream("/neuro_data/models/neuro_clicks.json")) {
             if (is == null) {
                 LOGGER.warn("[NeuroClicks] Файл neuro_clicks.json не найден, используются базовые распределения.");
                 return;

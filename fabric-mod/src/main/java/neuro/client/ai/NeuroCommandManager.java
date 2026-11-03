@@ -4,6 +4,7 @@ import net.fabricmc.fabric.api.client.message.v1.ClientSendMessageEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.Text;
 import neuro.client.NeuroClient;
+import neuro.client.gui.ModernClickGuiScreen;
 import neuro.client.module.combat.AuraModule;
 
 import java.nio.file.DirectoryStream;
@@ -13,7 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Перехватывает команды ".neuro ..." в чате на стороне клиента (не отправляя их на сервер).
+ * Перехватывает команды ".neuro ...", ".aura ...", ".gui", ".menu" в чате на стороне клиента (не отправляя их на сервер).
  */
 public class NeuroCommandManager {
 
@@ -21,6 +22,13 @@ public class NeuroCommandManager {
         ClientSendMessageEvents.ALLOW_CHAT.register(message -> {
             if (message == null) return true;
             String trimmed = message.trim();
+            if (trimmed.equalsIgnoreCase(".gui") || trimmed.equalsIgnoreCase(".menu")) {
+                MinecraftClient client = MinecraftClient.getInstance();
+                if (client != null) {
+                    client.execute(() -> client.setScreen(new ModernClickGuiScreen()));
+                }
+                return false;
+            }
             if (trimmed.startsWith(".neuro") || trimmed.startsWith(".aura")) {
                 handleCommand(trimmed);
                 return false; // Не отправляем команду в публичный чат сервера
@@ -43,6 +51,11 @@ public class NeuroCommandManager {
         AuraModule aura = nc.getModuleManager().getModule(AuraModule.class);
 
         switch (sub) {
+            case "gui":
+            case "menu": {
+                client.execute(() -> client.setScreen(new ModernClickGuiScreen()));
+                break;
+            }
             case "rec":
             case "record": {
                 String sessionName = parts.length > 2 ? parts[2] : "session";
@@ -73,9 +86,9 @@ public class NeuroCommandManager {
             case "load": {
                 String modelArg = parts.length > 2 ? parts[2].toLowerCase() : "aim";
                 if ("default".equals(modelArg)) {
-                    engine.loadModelFromResource("/assets/neuro/models/default.json", "default.json");
+                    engine.loadModelFromResource("/neuro_data/models/default.json", "default.json");
                 } else if ("v6".equals(modelArg) || "neuraim".equals(modelArg)) {
-                    engine.loadModelFromResource("/assets/neuro/models/neuraim_aim_v6.json", "neuraim_v6.json");
+                    engine.loadModelFromResource("/neuro_data/models/neuraim_aim_v6.json", "neuraim_v6.json");
                 } else {
                     engine.loadCustomOrDefaultModel();
                 }
@@ -105,6 +118,7 @@ public class NeuroCommandManager {
             }
             default: {
                 reply(client, "§d✦ Команды обучаемой Киллауры Neuro 1.21.4:");
+                reply(client, "§e.gui §7или §e.neuro gui §7— открыть меню ClickGUI (удобно на телефоне)");
                 reply(client, "§e.neuro record <имя> §7— начать запись движений Вашей руки в .csv");
                 reply(client, "§e.neuro stop §7— остановить запись и сохранить датасет");
                 reply(client, "§e.neuro train [эпох] §7— обучить нейросеть (GRU+MDN) и загрузить aim.json");

@@ -83,7 +83,7 @@ public class NeuroAuraEngine {
                 return;
             }
         }
-        loadModelFromResource("/assets/neuro/models/default.json", "default.json");
+        loadModelFromResource("/neuro_data/models/default.json", "default.json");
     }
 
     public void loadCustomOrDefaultModel() {
@@ -99,7 +99,7 @@ public class NeuroAuraEngine {
                 return;
             }
         }
-        loadModelFromResource("/assets/neuro/models/default.json", "default.json");
+        loadModelFromResource("/neuro_data/models/default.json", "default.json");
     }
 
     public boolean loadModelFromResource(String resourcePath, String label) {

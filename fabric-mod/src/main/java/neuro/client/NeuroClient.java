@@ -25,8 +25,8 @@ import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.awt.Color;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 @Environment(EnvType.CLIENT)
 @SuppressWarnings("deprecation")
@@ -47,10 +47,18 @@ public final class NeuroClient implements ClientModInitializer {
     private NeuroTrainerManager trainerManager;
     private NeuroCommandManager commandManager;
 
+    /**
+     * Быстрый побитовый ARGB без использования java.awt.Color
+     * (исключает зависание AWT Toolkit на логотипе Mojang Studios на телефонах PojavLauncher/Zalith и ПК).
+     */
+    public static int argb(int a, int r, int g, int b) {
+        return ((a & 0xFF) << 24) | ((r & 0xFF) << 16) | ((g & 0xFF) << 8) | (b & 0xFF);
+    }
+
     @Override
     public void onInitializeClient() {
         instance = this;
-        LOGGER.info("[Neuro] Инициализация обучаемого клиента под Fabric 1.21.4 (Java 21)...");
+        LOGGER.info("[Neuro] Быстрая неблокирующая инициализация клиента под Fabric 1.21.4 (Java 21)...");
 
         this.clickGuiKeyBinding = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.neuro.open_clickgui",
@@ -67,11 +75,19 @@ public final class NeuroClient implements ClientModInitializer {
         this.moduleManager = new ModuleManager();
         this.shaderManager = new ShaderManager();
 
-        this.neuroEngine.loadModelFromResources();
-        this.neuroClicks.loadFromResources();
-        this.trainerManager.extractTrainerScripts();
         this.commandManager.register();
         this.shaderManager.initShaders();
+
+        // Асинхронная загрузка нейросетевых матриц, чтобы не задерживать экран загрузки Mojang Studios
+        CompletableFuture.runAsync(() -> {
+            try {
+                this.neuroEngine.loadModelFromResources();
+                this.neuroClicks.loadFromResources();
+                this.trainerManager.extractTrainerScripts();
+            } catch (Throwable t) {
+                LOGGER.warn("[Neuro] Фоновая инициализация ресурсов: {}", t.getMessage());
+            }
+        });
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null) return;
@@ -93,14 +109,14 @@ public final class NeuroClient implements ClientModInitializer {
             renderHud(client, drawContext);
         });
 
-        LOGGER.info("[Neuro] Успешно инициализирован! [Правый Shift] — меню | [.neuro help] — обучение Киллауры.");
+        LOGGER.info("[Neuro] Готово! [Правый Shift] или [.gui] в чате — меню | [.neuro help] — обучение Киллауры.");
     }
 
     private void renderHud(MinecraftClient client, DrawContext context) {
         String modelTag = this.neuroEngine != null ? this.neuroEngine.getLoadedModelName() : "default.json";
         String watermark = "✦ NEURO 1.21.4 | " + client.getCurrentFps() + " FPS | AI: " + modelTag;
         int wmWidth = client.textRenderer.getWidth(watermark) + 14;
-        context.fill(8, 8, 8 + wmWidth, 26, new Color(13, 17, 30, 220).getRGB());
+        context.fill(8, 8, 8 + wmWidth, 26, argb(220, 13, 17, 30));
         context.drawBorder(8, 8, wmWidth, 18, 0xFF8B5CF6);
         context.drawText(client.textRenderer, watermark, 15, 13, 0xFFFFFFFF, true);
 
@@ -110,7 +126,7 @@ public final class NeuroClient implements ClientModInitializer {
                     + this.datasetRecorder.getRecordedTicks() + " тиков (эпизодов: "
                     + this.datasetRecorder.getValidEpisodes() + ")";
             int recW = client.textRenderer.getWidth(recText) + 14;
-            context.fill(8, statusY, 8 + recW, statusY + 18, new Color(45, 12, 22, 225).getRGB());
+            context.fill(8, statusY, 8 + recW, statusY + 18, argb(225, 45, 12, 22));
             context.drawBorder(8, statusY, recW, 18, 0xFFEF4444);
             context.drawText(client.textRenderer, recText, 15, statusY + 5, 0xFFFCA5A5, true);
             statusY += 22;
@@ -119,7 +135,7 @@ public final class NeuroClient implements ClientModInitializer {
         if (this.trainerManager != null && this.trainerManager.isTraining()) {
             String trText = "⚡ TRAIN: " + this.trainerManager.getLastStatus();
             int trW = client.textRenderer.getWidth(trText) + 14;
-            context.fill(8, statusY, 8 + trW, statusY + 18, new Color(14, 36, 28, 225).getRGB());
+            context.fill(8, statusY, 8 + trW, statusY + 18, argb(225, 14, 36, 28));
             context.drawBorder(8, statusY, trW, 18, 0xFF10B981);
             context.drawText(client.textRenderer, trText, 15, statusY + 5, 0xFF6EE7B7, true);
         }
@@ -131,7 +147,7 @@ public final class NeuroClient implements ClientModInitializer {
             String name = mod.getName();
             int tw = client.textRenderer.getWidth(name) + 12;
             int x = screenWidth - tw - 8;
-            context.fill(x, yOffset, x + tw, yOffset + 15, new Color(13, 17, 30, 205).getRGB());
+            context.fill(x, yOffset, x + tw, yOffset + 15, argb(205, 13, 17, 30));
             context.fill(x + tw - 2, yOffset, x + tw, yOffset + 15, 0xFF8B5CF6);
             context.drawText(client.textRenderer, name, x + 5, yOffset + 4, 0xFFE2E8F0, true);
             yOffset += 17;
@@ -144,7 +160,7 @@ public final class NeuroClient implements ClientModInitializer {
             int thY = client.getWindow().getScaledHeight() / 2 + 12;
             int thW = 152;
             int thH = 44;
-            context.fill(thX, thY, thX + thW, thY + thH, new Color(13, 17, 30, 225).getRGB());
+            context.fill(thX, thY, thX + thW, thY + thH, argb(225, 13, 17, 30));
             context.drawBorder(thX, thY, thW, thH, 0xFF8B5CF6);
             String tName = target.getName().getString();
             float hp = Math.max(0.0f, target.getHealth());
