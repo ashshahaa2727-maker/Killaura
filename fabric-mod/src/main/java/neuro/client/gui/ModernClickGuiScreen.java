@@ -4,9 +4,12 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.text.Text;
 import neuro.client.NeuroClient;
+import neuro.client.ai.NeuroDatasetRecorder;
+import neuro.client.ai.NeuroTrainerManager;
 import neuro.client.module.Category;
 import neuro.client.module.Module;
 import neuro.client.module.ModuleManager;
+import neuro.client.module.combat.AuraModule;
 import neuro.client.setting.BooleanSetting;
 import neuro.client.setting.ModeSetting;
 import neuro.client.setting.Setting;
@@ -20,11 +23,12 @@ public class ModernClickGuiScreen extends Screen {
     private Category currentCategory = Category.COMBAT;
     private Module expandedModule = null;
     private float animationProgress = 0.0f;
+    private int scrollOffset = 0;
 
     private int guiX = 100;
-    private int guiY = 50;
-    private final int guiWidth = 580;
-    private final int guiHeight = 390;
+    private int guiY = 45;
+    private final int guiWidth = 600;
+    private final int guiHeight = 410;
 
     private boolean isDragging = false;
     private int dragOffsetX = 0;
@@ -40,6 +44,9 @@ public class ModernClickGuiScreen extends Screen {
         this.animationProgress = 0.0f;
         this.guiX = (this.width - this.guiWidth) / 2;
         this.guiY = (this.height - this.guiHeight) / 2;
+        if (this.expandedModule == null && NeuroClient.getInstance() != null) {
+            this.expandedModule = NeuroClient.getInstance().getModuleManager().getModule(AuraModule.class);
+        }
     }
 
     @Override
@@ -56,23 +63,54 @@ public class ModernClickGuiScreen extends Screen {
         int backdropAlpha = (int) (145 * this.animationProgress);
         context.fill(0, 0, this.width, this.height, new Color(7, 9, 16, backdropAlpha).getRGB());
 
-        int bgAlpha = (int) (235 * this.animationProgress);
+        int bgAlpha = (int) (238 * this.animationProgress);
         int mainBgColor = new Color(13, 17, 30, bgAlpha).getRGB();
-        int borderColor = new Color(139, 92, 246, (int) (200 * this.animationProgress)).getRGB();
+        int borderColor = new Color(139, 92, 246, (int) (210 * this.animationProgress)).getRGB();
 
         context.fill(guiX, guiY, guiX + guiWidth, guiY + guiHeight, mainBgColor);
         context.drawBorder(guiX, guiY, guiWidth, guiHeight, borderColor);
 
-        int headerHeight = 40;
+        int headerHeight = 42;
         int headerBg = new Color(19, 24, 42, bgAlpha).getRGB();
         context.fill(guiX + 1, guiY + 1, guiX + guiWidth - 1, guiY + headerHeight, headerBg);
 
-        context.drawText(this.textRenderer, "✦ NEURO CLIENT", guiX + 16, guiY + 15, 0xFFFFFFFF, true);
-        context.drawText(this.textRenderer, "Fabric 1.21.4 | GRU AI", guiX + 120, guiY + 16, 0xFFA78BFA, false);
+        context.drawText(this.textRenderer, "✦ NEURO 1.21.4", guiX + 16, guiY + 16, 0xFFFFFFFF, true);
 
-        String bindHint = "[Right Shift] ЛКМ: Вкл | ПКМ: Настройки";
+        NeuroClient nc = NeuroClient.getInstance();
+        String modelLabel = nc != null && nc.getNeuroEngine() != null
+                ? "AI: " + nc.getNeuroEngine().getLoadedModelName()
+                : "GRU AI";
+        context.drawText(this.textRenderer, modelLabel, guiX + 112, guiY + 16, 0xFFA78BFA, false);
+
+        // Кнопки быстрого управления обучаемой Киллаурой в шапке
+        NeuroDatasetRecorder recorder = nc != null ? nc.getDatasetRecorder() : null;
+        NeuroTrainerManager trainer = nc != null ? nc.getTrainerManager() : null;
+        boolean recActive = recorder != null && recorder.isRecording();
+        boolean trActive = trainer != null && trainer.isTraining();
+
+        int recBtnX = guiX + 250;
+        int recBtnY = guiY + 10;
+        int recBtnW = 108;
+        int recBtnH = 22;
+        context.fill(recBtnX, recBtnY, recBtnX + recBtnW, recBtnY + recBtnH,
+                recActive ? new Color(185, 28, 28, 230).getRGB() : new Color(30, 41, 59, 220).getRGB());
+        context.drawBorder(recBtnX, recBtnY, recBtnW, recBtnH, recActive ? 0xFFEF4444 : 0xFF64748B);
+        String recBtnLabel = recActive ? "■ СТОП (" + recorder.getRecordedTicks() + "t)" : "● Запись боя";
+        context.drawText(this.textRenderer, recBtnLabel, recBtnX + 8, recBtnY + 7, 0xFFFFFFFF, false);
+
+        int trBtnX = recBtnX + recBtnW + 8;
+        int trBtnY = guiY + 10;
+        int trBtnW = 108;
+        int trBtnH = 22;
+        context.fill(trBtnX, trBtnY, trBtnX + trBtnW, trBtnY + trBtnH,
+                trActive ? new Color(5, 150, 105, 230).getRGB() : new Color(88, 28, 135, 220).getRGB());
+        context.drawBorder(trBtnX, trBtnY, trBtnW, trBtnH, trActive ? 0xFF10B981 : 0xFFA855F7);
+        String trBtnLabel = trActive ? "⚡ Обучение..." : "⚡ Обучить ИИ";
+        context.drawText(this.textRenderer, trBtnLabel, trBtnX + 10, trBtnY + 7, 0xFFFFFFFF, false);
+
+        String bindHint = "[R-Shift]";
         int hintWidth = this.textRenderer.getWidth(bindHint);
-        context.drawText(this.textRenderer, bindHint, guiX + guiWidth - hintWidth - 16, guiY + 16, 0xFF94A3B8, false);
+        context.drawText(this.textRenderer, bindHint, guiX + guiWidth - hintWidth - 14, guiY + 16, 0xFF94A3B8, false);
 
         int sidebarWidth = 135;
         int sidebarBg = new Color(10, 13, 24, bgAlpha).getRGB();
@@ -92,19 +130,25 @@ public class ModernClickGuiScreen extends Screen {
             catY += 32;
         }
 
-        int contentX = guiX + sidebarWidth + 14;
-        int contentY = guiY + headerHeight + 12;
-        int contentWidth = guiWidth - sidebarWidth - 28;
+        // Подсказка команд внизу сайдбара
+        context.drawText(this.textRenderer, ".neuro rec", guiX + 12, guiY + guiHeight - 40, 0xFF94A3B8, false);
+        context.drawText(this.textRenderer, ".neuro train", guiX + 12, guiY + guiHeight - 28, 0xFFA78BFA, false);
+        context.drawText(this.textRenderer, "Колесо: скролл", guiX + 12, guiY + guiHeight - 16, 0xFF64748B, false);
 
-        ModuleManager moduleManager = NeuroClient.getInstance().getModuleManager();
+        int contentX = guiX + sidebarWidth + 14;
+        int contentY = guiY + headerHeight + 10;
+        int contentWidth = guiWidth - sidebarWidth - 28;
+        int contentBottom = guiY + guiHeight - 10;
+
+        context.enableScissor(contentX - 2, contentY, contentX + contentWidth + 2, contentBottom);
+
+        ModuleManager moduleManager = nc.getModuleManager();
         List<Module> modules = moduleManager.getModulesByCategory(this.currentCategory);
 
-        int modY = contentY;
+        int modY = contentY - this.scrollOffset;
         for (Module module : modules) {
-            if (modY + 36 > guiY + guiHeight - 10) break;
-
             boolean isHovered = mouseX >= contentX && mouseX <= contentX + contentWidth &&
-                               mouseY >= modY && mouseY <= modY + 34;
+                               mouseY >= Math.max(contentY, modY) && mouseY <= Math.min(contentBottom, modY + 34);
 
             int cardBg = module.isEnabled()
                     ? new Color(32, 38, 72, 235).getRGB()
@@ -126,12 +170,11 @@ public class ModernClickGuiScreen extends Screen {
             int knobX = module.isEnabled() ? toggleX + 14 : toggleX + 2;
             context.fill(knobX, toggleY + 2, knobX + 10, toggleY + 12, 0xFFFFFFFF);
 
-            modY += 40;
+            modY += 38;
 
             if (this.expandedModule == module && !module.getSettings().isEmpty()) {
                 for (Setting<?> setting : module.getSettings()) {
-                    if (modY + 24 > guiY + guiHeight - 10) break;
-                    context.fill(contentX + 8, modY, contentX + contentWidth - 8, modY + 22, new Color(10, 14, 26, 220).getRGB());
+                    context.fill(contentX + 8, modY, contentX + contentWidth - 8, modY + 22, new Color(10, 14, 26, 225).getRGB());
                     if (setting instanceof SliderSetting slider) {
                         double ratio = (slider.getValue() - slider.getMin()) / (slider.getMax() - slider.getMin());
                         int fillW = (int) ((contentWidth - 16) * Math.max(0.0, Math.min(1.0, ratio)));
@@ -144,11 +187,50 @@ public class ModernClickGuiScreen extends Screen {
                 modY += 4;
             }
         }
+
+        context.disableScissor();
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        this.scrollOffset = Math.max(0, this.scrollOffset - (int) (verticalAmount * 18));
+        return true;
     }
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (button == 0 && mouseX >= guiX && mouseX <= guiX + guiWidth && mouseY >= guiY && mouseY <= guiY + 40) {
+        NeuroClient nc = NeuroClient.getInstance();
+        int recBtnX = guiX + 250;
+        int recBtnY = guiY + 10;
+        if (button == 0 && mouseX >= recBtnX && mouseX <= recBtnX + 108 && mouseY >= recBtnY && mouseY <= recBtnY + 22) {
+            if (nc != null && nc.getDatasetRecorder() != null) {
+                AuraModule aura = nc.getModuleManager().getModule(AuraModule.class);
+                if (nc.getDatasetRecorder().isRecording()) {
+                    nc.getDatasetRecorder().stopRecording();
+                    if (aura != null) aura.setRecordDatasetFlag(false);
+                } else {
+                    nc.getDatasetRecorder().startRecording("session");
+                    if (aura != null) aura.setRecordDatasetFlag(true);
+                }
+            }
+            return true;
+        }
+
+        int trBtnX = recBtnX + 116;
+        int trBtnY = guiY + 10;
+        if (button == 0 && mouseX >= trBtnX && mouseX <= trBtnX + 108 && mouseY >= trBtnY && mouseY <= trBtnY + 22) {
+            if (nc != null && nc.getTrainerManager() != null && !nc.getTrainerManager().isTraining()) {
+                if (nc.getDatasetRecorder() != null && nc.getDatasetRecorder().isRecording()) {
+                    nc.getDatasetRecorder().stopRecording();
+                    AuraModule aura = nc.getModuleManager().getModule(AuraModule.class);
+                    if (aura != null) aura.setRecordDatasetFlag(false);
+                }
+                nc.getTrainerManager().startTraining(200);
+            }
+            return true;
+        }
+
+        if (button == 0 && mouseX >= guiX && mouseX <= guiX + guiWidth && mouseY >= guiY && mouseY <= guiY + 42) {
             this.isDragging = true;
             this.dragOffsetX = (int) (mouseX - guiX);
             this.dragOffsetY = (int) (mouseY - guiY);
@@ -156,13 +238,14 @@ public class ModernClickGuiScreen extends Screen {
         }
 
         int sidebarWidth = 135;
-        int headerHeight = 40;
+        int headerHeight = 42;
         if (mouseX >= guiX && mouseX <= guiX + sidebarWidth && mouseY >= guiY + headerHeight) {
             int catY = guiY + headerHeight + 12;
             for (Category category : Category.values()) {
                 if (mouseY >= catY && mouseY <= catY + 26) {
                     this.currentCategory = category;
                     this.expandedModule = null;
+                    this.scrollOffset = 0;
                     return true;
                 }
                 catY += 32;
@@ -170,13 +253,18 @@ public class ModernClickGuiScreen extends Screen {
         }
 
         int contentX = guiX + sidebarWidth + 14;
-        int contentY = guiY + headerHeight + 12;
+        int contentY = guiY + headerHeight + 10;
         int contentWidth = guiWidth - sidebarWidth - 28;
+        int contentBottom = guiY + guiHeight - 10;
 
-        ModuleManager moduleManager = NeuroClient.getInstance().getModuleManager();
+        if (mouseY < contentY || mouseY > contentBottom) {
+            return super.mouseClicked(mouseX, mouseY, button);
+        }
+
+        ModuleManager moduleManager = nc.getModuleManager();
         List<Module> modules = moduleManager.getModulesByCategory(this.currentCategory);
 
-        int modY = contentY;
+        int modY = contentY - this.scrollOffset;
         for (Module module : modules) {
             if (mouseX >= contentX && mouseX <= contentX + contentWidth && mouseY >= modY && mouseY <= modY + 34) {
                 if (button == 0) {
@@ -187,7 +275,7 @@ public class ModernClickGuiScreen extends Screen {
                     return true;
                 }
             }
-            modY += 40;
+            modY += 38;
 
             if (this.expandedModule == module && !module.getSettings().isEmpty()) {
                 for (Setting<?> setting : module.getSettings()) {

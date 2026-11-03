@@ -12,6 +12,10 @@ import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.entity.LivingEntity;
 import neuro.client.ai.NeuroAuraEngine;
+import neuro.client.ai.NeuroClicks;
+import neuro.client.ai.NeuroCommandManager;
+import neuro.client.ai.NeuroDatasetRecorder;
+import neuro.client.ai.NeuroTrainerManager;
 import neuro.client.gui.ModernClickGuiScreen;
 import neuro.client.module.Module;
 import neuro.client.module.ModuleManager;
@@ -38,11 +42,15 @@ public final class NeuroClient implements ClientModInitializer {
     private ModuleManager moduleManager;
     private ShaderManager shaderManager;
     private NeuroAuraEngine neuroEngine;
+    private NeuroClicks neuroClicks;
+    private NeuroDatasetRecorder datasetRecorder;
+    private NeuroTrainerManager trainerManager;
+    private NeuroCommandManager commandManager;
 
     @Override
     public void onInitializeClient() {
         instance = this;
-        LOGGER.info("[Neuro] Инициализация мода под Fabric 1.21.4 (Java 21)...");
+        LOGGER.info("[Neuro] Инициализация обучаемого клиента под Fabric 1.21.4 (Java 21)...");
 
         this.clickGuiKeyBinding = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.neuro.open_clickgui",
@@ -51,11 +59,18 @@ public final class NeuroClient implements ClientModInitializer {
                 "category.neuro.general"
         ));
 
+        this.neuroEngine = new NeuroAuraEngine();
+        this.neuroClicks = new NeuroClicks();
+        this.datasetRecorder = new NeuroDatasetRecorder();
+        this.trainerManager = new NeuroTrainerManager();
+        this.commandManager = new NeuroCommandManager();
         this.moduleManager = new ModuleManager();
         this.shaderManager = new ShaderManager();
-        this.neuroEngine = new NeuroAuraEngine();
 
         this.neuroEngine.loadModelFromResources();
+        this.neuroClicks.loadFromResources();
+        this.trainerManager.extractTrainerScripts();
+        this.commandManager.register();
         this.shaderManager.initShaders();
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -78,15 +93,36 @@ public final class NeuroClient implements ClientModInitializer {
             renderHud(client, drawContext);
         });
 
-        LOGGER.info("[Neuro] Успешно инициализирован! Нажмите [Правый Shift] в игре для открытия меню.");
+        LOGGER.info("[Neuro] Успешно инициализирован! [Правый Shift] — меню | [.neuro help] — обучение Киллауры.");
     }
 
     private void renderHud(MinecraftClient client, DrawContext context) {
-        String watermark = "✦ NEURO 1.21.4 | " + client.getCurrentFps() + " FPS";
+        String modelTag = this.neuroEngine != null ? this.neuroEngine.getLoadedModelName() : "default.json";
+        String watermark = "✦ NEURO 1.21.4 | " + client.getCurrentFps() + " FPS | AI: " + modelTag;
         int wmWidth = client.textRenderer.getWidth(watermark) + 14;
         context.fill(8, 8, 8 + wmWidth, 26, new Color(13, 17, 30, 220).getRGB());
         context.drawBorder(8, 8, wmWidth, 18, 0xFF8B5CF6);
         context.drawText(client.textRenderer, watermark, 15, 13, 0xFFFFFFFF, true);
+
+        int statusY = 30;
+        if (this.datasetRecorder != null && this.datasetRecorder.isRecording()) {
+            String recText = "● REC [" + this.datasetRecorder.getActiveFileName() + "]: "
+                    + this.datasetRecorder.getRecordedTicks() + " тиков (эпизодов: "
+                    + this.datasetRecorder.getValidEpisodes() + ")";
+            int recW = client.textRenderer.getWidth(recText) + 14;
+            context.fill(8, statusY, 8 + recW, statusY + 18, new Color(45, 12, 22, 225).getRGB());
+            context.drawBorder(8, statusY, recW, 18, 0xFFEF4444);
+            context.drawText(client.textRenderer, recText, 15, statusY + 5, 0xFFFCA5A5, true);
+            statusY += 22;
+        }
+
+        if (this.trainerManager != null && this.trainerManager.isTraining()) {
+            String trText = "⚡ TRAIN: " + this.trainerManager.getLastStatus();
+            int trW = client.textRenderer.getWidth(trText) + 14;
+            context.fill(8, statusY, 8 + trW, statusY + 18, new Color(14, 36, 28, 225).getRGB());
+            context.drawBorder(8, statusY, trW, 18, 0xFF10B981);
+            context.drawText(client.textRenderer, trText, 15, statusY + 5, 0xFF6EE7B7, true);
+        }
 
         List<Module> enabled = this.moduleManager.getEnabledModules();
         int screenWidth = client.getWindow().getScaledWidth();
@@ -106,17 +142,19 @@ public final class NeuroClient implements ClientModInitializer {
             LivingEntity target = aura.getTargetEntity();
             int thX = screenWidth / 2 + 16;
             int thY = client.getWindow().getScaledHeight() / 2 + 12;
-            int thW = 140;
-            int thH = 36;
+            int thW = 152;
+            int thH = 44;
             context.fill(thX, thY, thX + thW, thY + thH, new Color(13, 17, 30, 225).getRGB());
             context.drawBorder(thX, thY, thW, thH, 0xFF8B5CF6);
             String tName = target.getName().getString();
             float hp = Math.max(0.0f, target.getHealth());
             float maxHp = Math.max(1.0f, target.getMaxHealth());
             context.drawText(client.textRenderer, tName + " (" + String.format("%.1f", hp) + " HP)", thX + 8, thY + 6, 0xFFFFFFFF, true);
+            String subInfo = String.format("Dist: %.1fm | %s", client.player.distanceTo(target), aura.getClicksProfile());
+            context.drawText(client.textRenderer, subInfo, thX + 8, thY + 18, 0xFFA78BFA, false);
             int barW = (int) ((thW - 16) * Math.min(1.0f, hp / maxHp));
-            context.fill(thX + 8, thY + 22, thX + thW - 8, thY + 28, 0xFF1E293B);
-            context.fill(thX + 8, thY + 22, thX + 8 + barW, thY + 28, 0xFF8B5CF6);
+            context.fill(thX + 8, thY + 32, thX + thW - 8, thY + 38, 0xFF1E293B);
+            context.fill(thX + 8, thY + 32, thX + 8 + barW, thY + 38, 0xFF8B5CF6);
         }
     }
 
@@ -138,5 +176,17 @@ public final class NeuroClient implements ClientModInitializer {
 
     public NeuroAuraEngine getNeuroEngine() {
         return neuroEngine;
+    }
+
+    public NeuroClicks getNeuroClicks() {
+        return neuroClicks;
+    }
+
+    public NeuroDatasetRecorder getDatasetRecorder() {
+        return datasetRecorder;
+    }
+
+    public NeuroTrainerManager getTrainerManager() {
+        return trainerManager;
     }
 }
