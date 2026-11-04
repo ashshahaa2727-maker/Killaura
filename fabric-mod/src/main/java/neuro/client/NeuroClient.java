@@ -20,11 +20,14 @@ import neuro.client.gui.ModernClickGuiScreen;
 import neuro.client.module.Module;
 import neuro.client.module.ModuleManager;
 import neuro.client.module.combat.AuraModule;
+import neuro.client.module.combat.FakePlayerModule;
+import neuro.client.module.render.HudModule;
 import neuro.client.render.shader.ShaderManager;
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
@@ -39,6 +42,7 @@ public final class NeuroClient implements ClientModInitializer {
     private static NeuroClient instance;
 
     private KeyBinding clickGuiKeyBinding;
+    private KeyBinding fakePlayerKeyBinding;
     private ModuleManager moduleManager;
     private ShaderManager shaderManager;
     private NeuroAuraEngine neuroEngine;
@@ -64,6 +68,13 @@ public final class NeuroClient implements ClientModInitializer {
                 "key.neuro.open_clickgui",
                 InputUtil.Type.KEYSYM,
                 GLFW.GLFW_KEY_RIGHT_SHIFT,
+                "category.neuro.general"
+        ));
+
+        this.fakePlayerKeyBinding = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.neuro.fake_player",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_P,
                 "category.neuro.general"
         ));
 
@@ -100,6 +111,13 @@ public final class NeuroClient implements ClientModInitializer {
                 }
             }
 
+            while (this.fakePlayerKeyBinding.wasPressed()) {
+                FakePlayerModule fp = this.moduleManager.getModule(FakePlayerModule.class);
+                if (fp != null) {
+                    fp.toggle();
+                }
+            }
+
             this.moduleManager.onTick(client);
         });
 
@@ -109,16 +127,23 @@ public final class NeuroClient implements ClientModInitializer {
             renderHud(client, drawContext);
         });
 
-        LOGGER.info("[Neuro] Готово! [Правый Shift] или [.gui] в чате — меню | [.neuro help] — обучение Киллауры.");
+        LOGGER.info("[Neuro] Загружен 51 модуль! [Правый Shift / .gui] — меню | [P / .fp] — Фейк-Плеер | [.neuro help] — обучение ИИ.");
     }
 
     private void renderHud(MinecraftClient client, DrawContext context) {
-        String modelTag = this.neuroEngine != null ? this.neuroEngine.getLoadedModelName() : "default.json";
-        String watermark = "✦ NEURO 1.21.4 | " + client.getCurrentFps() + " FPS | AI: " + modelTag;
-        int wmWidth = client.textRenderer.getWidth(watermark) + 14;
-        context.fill(8, 8, 8 + wmWidth, 26, argb(220, 13, 17, 30));
-        context.drawBorder(8, 8, wmWidth, 18, 0xFF8B5CF6);
-        context.drawText(client.textRenderer, watermark, 15, 13, 0xFFFFFFFF, true);
+        HudModule hud = this.moduleManager.getModule(HudModule.class);
+        boolean showHud = hud == null || hud.isEnabled();
+
+        if (showHud && (hud == null || hud.isShowWatermark())) {
+            String modelTag = this.neuroEngine != null ? this.neuroEngine.getLoadedModelName() : "default.json";
+            FakePlayerModule fp = this.moduleManager.getModule(FakePlayerModule.class);
+            String fpTag = (fp != null && fp.isEnabled()) ? " | FP: ON" : "";
+            String watermark = "✦ NEURO 1.21.4 | " + client.getCurrentFps() + " FPS | AI: " + modelTag + fpTag;
+            int wmWidth = client.textRenderer.getWidth(watermark) + 14;
+            context.fill(8, 8, 8 + wmWidth, 26, argb(225, 13, 17, 30));
+            context.drawBorder(8, 8, wmWidth, 18, 0xFF8B5CF6);
+            context.drawText(client.textRenderer, watermark, 15, 13, 0xFFFFFFFF, true);
+        }
 
         int statusY = 30;
         if (this.datasetRecorder != null && this.datasetRecorder.isRecording()) {
@@ -126,7 +151,7 @@ public final class NeuroClient implements ClientModInitializer {
                     + this.datasetRecorder.getRecordedTicks() + " тиков (эпизодов: "
                     + this.datasetRecorder.getValidEpisodes() + ")";
             int recW = client.textRenderer.getWidth(recText) + 14;
-            context.fill(8, statusY, 8 + recW, statusY + 18, argb(225, 45, 12, 22));
+            context.fill(8, statusY, 8 + recW, statusY + 18, argb(230, 45, 12, 22));
             context.drawBorder(8, statusY, recW, 18, 0xFFEF4444);
             context.drawText(client.textRenderer, recText, 15, statusY + 5, 0xFFFCA5A5, true);
             statusY += 22;
@@ -135,42 +160,81 @@ public final class NeuroClient implements ClientModInitializer {
         if (this.trainerManager != null && this.trainerManager.isTraining()) {
             String trText = "⚡ TRAIN: " + this.trainerManager.getLastStatus();
             int trW = client.textRenderer.getWidth(trText) + 14;
-            context.fill(8, statusY, 8 + trW, statusY + 18, argb(225, 14, 36, 28));
+            context.fill(8, statusY, 8 + trW, statusY + 18, argb(230, 14, 36, 28));
             context.drawBorder(8, statusY, trW, 18, 0xFF10B981);
             context.drawText(client.textRenderer, trText, 15, statusY + 5, 0xFF6EE7B7, true);
+            statusY += 22;
         }
 
-        List<Module> enabled = this.moduleManager.getEnabledModules();
         int screenWidth = client.getWindow().getScaledWidth();
-        int yOffset = 8;
-        for (Module mod : enabled) {
-            String name = mod.getName();
-            int tw = client.textRenderer.getWidth(name) + 12;
-            int x = screenWidth - tw - 8;
-            context.fill(x, yOffset, x + tw, yOffset + 15, argb(205, 13, 17, 30));
-            context.fill(x + tw - 2, yOffset, x + tw, yOffset + 15, 0xFF8B5CF6);
-            context.drawText(client.textRenderer, name, x + 5, yOffset + 4, 0xFFE2E8F0, true);
-            yOffset += 17;
+        int screenHeight = client.getWindow().getScaledHeight();
+
+        // Coords & BPS in bottom-left
+        if (showHud && (hud == null || hud.isShowCoords())) {
+            double dx = client.player.getX() - client.player.prevX;
+            double dz = client.player.getZ() - client.player.prevZ;
+            double bps = Math.hypot(dx, dz) * 20.0;
+            String coords = String.format("XYZ: %.0f, %.0f, %.0f | %.1f BPS",
+                    client.player.getX(), client.player.getY(), client.player.getZ(), bps);
+            int cw = client.textRenderer.getWidth(coords) + 12;
+            context.fill(8, screenHeight - 24, 8 + cw, screenHeight - 8, argb(210, 13, 17, 30));
+            context.drawBorder(8, screenHeight - 24, cw, 16, 0xFF6366F1);
+            context.drawText(client.textRenderer, coords, 14, screenHeight - 20, 0xFFCBD5E1, true);
         }
 
-        AuraModule aura = this.moduleManager.getModule(AuraModule.class);
-        if (aura != null && aura.isEnabled() && aura.getTargetEntity() != null) {
-            LivingEntity target = aura.getTargetEntity();
-            int thX = screenWidth / 2 + 16;
-            int thY = client.getWindow().getScaledHeight() / 2 + 12;
-            int thW = 152;
-            int thH = 44;
-            context.fill(thX, thY, thX + thW, thY + thH, argb(225, 13, 17, 30));
-            context.drawBorder(thX, thY, thW, thH, 0xFF8B5CF6);
-            String tName = target.getName().getString();
-            float hp = Math.max(0.0f, target.getHealth());
-            float maxHp = Math.max(1.0f, target.getMaxHealth());
-            context.drawText(client.textRenderer, tName + " (" + String.format("%.1f", hp) + " HP)", thX + 8, thY + 6, 0xFFFFFFFF, true);
-            String subInfo = String.format("Dist: %.1fm | %s", client.player.distanceTo(target), aura.getClicksProfile());
-            context.drawText(client.textRenderer, subInfo, thX + 8, thY + 18, 0xFFA78BFA, false);
-            int barW = (int) ((thW - 16) * Math.min(1.0f, hp / maxHp));
-            context.fill(thX + 8, thY + 32, thX + thW - 8, thY + 38, 0xFF1E293B);
-            context.fill(thX + 8, thY + 32, thX + 8 + barW, thY + 38, 0xFF8B5CF6);
+        // Sorted ArrayList in top-right
+        if (showHud && (hud == null || hud.isShowArrayList())) {
+            List<Module> enabled = this.moduleManager.getEnabledModules();
+            enabled.sort(Comparator.comparingInt((Module m) -> client.textRenderer.getWidth(m.getName())).reversed());
+            int yOffset = 8;
+            for (Module mod : enabled) {
+                String name = mod.getName();
+                int tw = client.textRenderer.getWidth(name) + 12;
+                int x = screenWidth - tw - 8;
+                context.fill(x, yOffset, x + tw, yOffset + 15, argb(210, 13, 17, 30));
+                context.fill(x + tw - 2, yOffset, x + tw, yOffset + 15, 0xFF8B5CF6);
+                context.drawText(client.textRenderer, name, x + 5, yOffset + 4, 0xFFE2E8F0, true);
+                yOffset += 16;
+            }
+        }
+
+        // TargetHUD (показывает цель Aura ИЛИ активного FakePlayer)
+        if (showHud && (hud == null || hud.isShowTargetHud())) {
+            AuraModule aura = this.moduleManager.getModule(AuraModule.class);
+            FakePlayerModule fpMod = this.moduleManager.getModule(FakePlayerModule.class);
+            LivingEntity target = (aura != null && aura.isEnabled() && aura.getTargetEntity() != null)
+                    ? aura.getTargetEntity()
+                    : (fpMod != null && fpMod.isEnabled() ? fpMod.getFakePlayer() : null);
+
+            if (target != null && target.isAlive()) {
+                int thX = screenWidth / 2 + 18;
+                int thY = screenHeight / 2 + 14;
+                int thW = 168;
+                int thH = 48;
+                boolean hurt = target.hurtTime > 0;
+                context.fill(thX, thY, thX + thW, thY + thH, argb(230, hurt ? 38 : 13, 17, 30));
+                context.drawBorder(thX, thY, thW, thH, hurt ? 0xFFEF4444 : 0xFF8B5CF6);
+
+                String tName = target == (fpMod != null ? fpMod.getFakePlayer() : null)
+                        ? "NeuroBot [FakePlayer]"
+                        : target.getName().getString();
+                float hp = Math.max(0.0f, target.getHealth());
+                float abs = Math.max(0.0f, target.getAbsorptionAmount());
+                float maxHp = Math.max(1.0f, target.getMaxHealth());
+
+                context.drawText(client.textRenderer,
+                        tName + " (" + String.format("%.1f", hp + abs) + "❤)",
+                        thX + 8, thY + 6, 0xFFFFFFFF, true);
+
+                String prof = aura != null ? aura.getClicksProfile() : "strong";
+                String subInfo = String.format("Dist: %.1fm | Hurt: %d | %s",
+                        client.player.distanceTo(target), target.hurtTime, prof);
+                context.drawText(client.textRenderer, subInfo, thX + 8, thY + 19, 0xFFA78BFA, false);
+
+                int barW = (int) ((thW - 16) * Math.min(1.0f, hp / maxHp));
+                context.fill(thX + 8, thY + 34, thX + thW - 8, thY + 41, 0xFF1E293B);
+                context.fill(thX + 8, thY + 34, thX + 8 + barW, thY + 41, hurt ? 0xFFEF4444 : 0xFF8B5CF6);
+            }
         }
     }
 

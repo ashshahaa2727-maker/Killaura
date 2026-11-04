@@ -6,6 +6,7 @@ import net.minecraft.text.Text;
 import neuro.client.NeuroClient;
 import neuro.client.gui.ModernClickGuiScreen;
 import neuro.client.module.combat.AuraModule;
+import neuro.client.module.combat.FakePlayerModule;
 
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
@@ -14,7 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Перехватывает команды ".neuro ...", ".aura ...", ".gui", ".menu" в чате на стороне клиента (не отправляя их на сервер).
+ * Перехватывает команды ".neuro ...", ".aura ...", ".fp", ".fakeplayer", ".gui", ".menu" в чате на стороне клиента (не отправляя их на сервер).
  */
 public class NeuroCommandManager {
 
@@ -26,6 +27,16 @@ public class NeuroCommandManager {
                 MinecraftClient client = MinecraftClient.getInstance();
                 if (client != null) {
                     client.execute(() -> client.setScreen(new ModernClickGuiScreen()));
+                }
+                return false;
+            }
+            if (trimmed.equalsIgnoreCase(".fp") || trimmed.equalsIgnoreCase(".fakeplayer")) {
+                MinecraftClient client = MinecraftClient.getInstance();
+                if (client != null) {
+                    client.execute(() -> {
+                        FakePlayerModule fp = NeuroClient.getInstance().getModuleManager().getModule(FakePlayerModule.class);
+                        if (fp != null) fp.toggle();
+                    });
                 }
                 return false;
             }
@@ -49,11 +60,20 @@ public class NeuroCommandManager {
         NeuroTrainerManager trainer = nc.getTrainerManager();
         NeuroAuraEngine engine = nc.getNeuroEngine();
         AuraModule aura = nc.getModuleManager().getModule(AuraModule.class);
+        FakePlayerModule fp = nc.getModuleManager().getModule(FakePlayerModule.class);
 
         switch (sub) {
             case "gui":
             case "menu": {
                 client.execute(() -> client.setScreen(new ModernClickGuiScreen()));
+                break;
+            }
+            case "fp":
+            case "fakeplayer":
+            case "bot": {
+                if (fp != null) {
+                    fp.toggle();
+                }
                 break;
             }
             case "rec":
@@ -119,6 +139,7 @@ public class NeuroCommandManager {
             default: {
                 reply(client, "§d✦ Команды обучаемой Киллауры Neuro 1.21.4:");
                 reply(client, "§e.gui §7или §e.neuro gui §7— открыть меню ClickGUI (удобно на телефоне)");
+                reply(client, "§e.fp §7или §e.neuro fp §7— заспавнить / убрать Фейк-Плеера (PvP Бота)");
                 reply(client, "§e.neuro record <имя> §7— начать запись движений Вашей руки в .csv");
                 reply(client, "§e.neuro stop §7— остановить запись и сохранить датасет");
                 reply(client, "§e.neuro train [эпох] §7— обучить нейросеть (GRU+MDN) и загрузить aim.json");

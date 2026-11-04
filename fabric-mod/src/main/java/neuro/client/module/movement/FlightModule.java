@@ -9,13 +9,14 @@ import neuro.client.setting.SliderSetting;
 import java.util.List;
 
 public class FlightModule extends Module {
-    private final ModeSetting mode = new ModeSetting("Fly Mode", "Vanilla",
-            List.of("Vanilla", "Grim Glide", "Matrix Boost"));
-    private final SliderSetting speed = new SliderSetting("Fly Speed", 1.5, 0.5, 5.0, 0.1);
+    private final ModeSetting mode = new ModeSetting("Fly Mode", "Grim Disabler",
+            List.of("Grim Disabler", "Matrix Boost", "Vanilla Creative", "Glide Slow", "AirWalk"));
+    private final SliderSetting speed = new SliderSetting("Horizontal Speed", 1.6, 0.5, 5.0, 0.1);
+    private final SliderSetting vSpeed = new SliderSetting("Vertical Speed", 0.8, 0.2, 3.0, 0.1);
 
     public FlightModule() {
         super("Flight", "Позволяет летать в режиме выживания", Category.MOVEMENT);
-        this.addSettings(mode, speed);
+        this.addSettings(mode, speed, vSpeed);
     }
 
     @Override

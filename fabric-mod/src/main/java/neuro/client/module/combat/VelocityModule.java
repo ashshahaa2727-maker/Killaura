@@ -11,19 +11,24 @@ import java.util.List;
 
 public class VelocityModule extends Module {
     private final ModeSetting mode = new ModeSetting("Mode", "Grim 1.21.4",
-            List.of("Grim 1.21.4", "Matrix Legit", "Cancel", "Custom %"));
+            List.of("Grim 1.21.4", "Matrix Legit", "Packet Cancel", "Jump Reset", "Custom %"));
     private final SliderSetting horizontal = new SliderSetting("Horizontal %", 0.0, 0.0, 100.0, 5.0);
     private final SliderSetting vertical = new SliderSetting("Vertical %", 0.0, 0.0, 100.0, 5.0);
+    private final SliderSetting chance = new SliderSetting("Chance %", 100.0, 10.0, 100.0, 5.0);
 
     public VelocityModule() {
         super("Velocity", "Подавление отбрасывания при получении урона", Category.COMBAT);
         this.setEnabled(true);
-        this.addSettings(mode, horizontal, vertical);
+        this.addSettings(mode, horizontal, vertical, chance);
     }
 
     @Override
     public void onTick(MinecraftClient client) {
-        if (client.player != null && client.player.hurtTime == 9) {
+        if (client.player != null && client.player.hurtTime >= 8) {
+            if ("Jump Reset".equals(mode.getValue()) && client.player.isOnGround()) {
+                client.player.jump();
+                return;
+            }
             double hScale = horizontal.getValue() / 100.0;
             double vScale = vertical.getValue() / 100.0;
             Vec3d vel = client.player.getVelocity();

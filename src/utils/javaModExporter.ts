@@ -242,11 +242,14 @@ import neuro.client.gui.ModernClickGuiScreen;
 import neuro.client.module.Module;
 import neuro.client.module.ModuleManager;
 import neuro.client.module.combat.AuraModule;
+import neuro.client.module.combat.FakePlayerModule;
+import neuro.client.module.render.HudModule;
 import neuro.client.render.shader.ShaderManager;
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
@@ -261,6 +264,7 @@ public final class NeuroClient implements ClientModInitializer {
     private static NeuroClient instance;
 
     private KeyBinding clickGuiKeyBinding;
+    private KeyBinding fakePlayerKeyBinding;
     private ModuleManager moduleManager;
     private ShaderManager shaderManager;
     private NeuroAuraEngine neuroEngine;
@@ -286,6 +290,13 @@ public final class NeuroClient implements ClientModInitializer {
                 "key.neuro.open_clickgui",
                 InputUtil.Type.KEYSYM,
                 GLFW.GLFW_KEY_RIGHT_SHIFT,
+                "category.neuro.general"
+        ));
+
+        this.fakePlayerKeyBinding = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.neuro.fake_player",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_P,
                 "category.neuro.general"
         ));
 
@@ -322,6 +333,13 @@ public final class NeuroClient implements ClientModInitializer {
                 }
             }
 
+            while (this.fakePlayerKeyBinding.wasPressed()) {
+                FakePlayerModule fp = this.moduleManager.getModule(FakePlayerModule.class);
+                if (fp != null) {
+                    fp.toggle();
+                }
+            }
+
             this.moduleManager.onTick(client);
         });
 
@@ -331,16 +349,23 @@ public final class NeuroClient implements ClientModInitializer {
             renderHud(client, drawContext);
         });
 
-        LOGGER.info("[Neuro] Готово! [Правый Shift] или [.gui] в чате — меню | [.neuro help] — обучение Киллауры.");
+        LOGGER.info("[Neuro] Загружен 51 модуль! [Правый Shift / .gui] — меню | [P / .fp] — Фейк-Плеер | [.neuro help] — обучение ИИ.");
     }
 
     private void renderHud(MinecraftClient client, DrawContext context) {
-        String modelTag = this.neuroEngine != null ? this.neuroEngine.getLoadedModelName() : "default.json";
-        String watermark = "✦ NEURO 1.21.4 | " + client.getCurrentFps() + " FPS | AI: " + modelTag;
-        int wmWidth = client.textRenderer.getWidth(watermark) + 14;
-        context.fill(8, 8, 8 + wmWidth, 26, argb(220, 13, 17, 30));
-        context.drawBorder(8, 8, wmWidth, 18, 0xFF8B5CF6);
-        context.drawText(client.textRenderer, watermark, 15, 13, 0xFFFFFFFF, true);
+        HudModule hud = this.moduleManager.getModule(HudModule.class);
+        boolean showHud = hud == null || hud.isEnabled();
+
+        if (showHud && (hud == null || hud.isShowWatermark())) {
+            String modelTag = this.neuroEngine != null ? this.neuroEngine.getLoadedModelName() : "default.json";
+            FakePlayerModule fp = this.moduleManager.getModule(FakePlayerModule.class);
+            String fpTag = (fp != null && fp.isEnabled()) ? " | FP: ON" : "";
+            String watermark = "✦ NEURO 1.21.4 | " + client.getCurrentFps() + " FPS | AI: " + modelTag + fpTag;
+            int wmWidth = client.textRenderer.getWidth(watermark) + 14;
+            context.fill(8, 8, 8 + wmWidth, 26, argb(225, 13, 17, 30));
+            context.drawBorder(8, 8, wmWidth, 18, 0xFF8B5CF6);
+            context.drawText(client.textRenderer, watermark, 15, 13, 0xFFFFFFFF, true);
+        }
 
         int statusY = 30;
         if (this.datasetRecorder != null && this.datasetRecorder.isRecording()) {
@@ -348,7 +373,7 @@ public final class NeuroClient implements ClientModInitializer {
                     + this.datasetRecorder.getRecordedTicks() + " тиков (эпизодов: "
                     + this.datasetRecorder.getValidEpisodes() + ")";
             int recW = client.textRenderer.getWidth(recText) + 14;
-            context.fill(8, statusY, 8 + recW, statusY + 18, argb(225, 45, 12, 22));
+            context.fill(8, statusY, 8 + recW, statusY + 18, argb(230, 45, 12, 22));
             context.drawBorder(8, statusY, recW, 18, 0xFFEF4444);
             context.drawText(client.textRenderer, recText, 15, statusY + 5, 0xFFFCA5A5, true);
             statusY += 22;
@@ -357,42 +382,81 @@ public final class NeuroClient implements ClientModInitializer {
         if (this.trainerManager != null && this.trainerManager.isTraining()) {
             String trText = "⚡ TRAIN: " + this.trainerManager.getLastStatus();
             int trW = client.textRenderer.getWidth(trText) + 14;
-            context.fill(8, statusY, 8 + trW, statusY + 18, argb(225, 14, 36, 28));
+            context.fill(8, statusY, 8 + trW, statusY + 18, argb(230, 14, 36, 28));
             context.drawBorder(8, statusY, trW, 18, 0xFF10B981);
             context.drawText(client.textRenderer, trText, 15, statusY + 5, 0xFF6EE7B7, true);
+            statusY += 22;
         }
 
-        List<Module> enabled = this.moduleManager.getEnabledModules();
         int screenWidth = client.getWindow().getScaledWidth();
-        int yOffset = 8;
-        for (Module mod : enabled) {
-            String name = mod.getName();
-            int tw = client.textRenderer.getWidth(name) + 12;
-            int x = screenWidth - tw - 8;
-            context.fill(x, yOffset, x + tw, yOffset + 15, argb(205, 13, 17, 30));
-            context.fill(x + tw - 2, yOffset, x + tw, yOffset + 15, 0xFF8B5CF6);
-            context.drawText(client.textRenderer, name, x + 5, yOffset + 4, 0xFFE2E8F0, true);
-            yOffset += 17;
+        int screenHeight = client.getWindow().getScaledHeight();
+
+        // Coords & BPS in bottom-left
+        if (showHud && (hud == null || hud.isShowCoords())) {
+            double dx = client.player.getX() - client.player.prevX;
+            double dz = client.player.getZ() - client.player.prevZ;
+            double bps = Math.hypot(dx, dz) * 20.0;
+            String coords = String.format("XYZ: %.0f, %.0f, %.0f | %.1f BPS",
+                    client.player.getX(), client.player.getY(), client.player.getZ(), bps);
+            int cw = client.textRenderer.getWidth(coords) + 12;
+            context.fill(8, screenHeight - 24, 8 + cw, screenHeight - 8, argb(210, 13, 17, 30));
+            context.drawBorder(8, screenHeight - 24, cw, 16, 0xFF6366F1);
+            context.drawText(client.textRenderer, coords, 14, screenHeight - 20, 0xFFCBD5E1, true);
         }
 
-        AuraModule aura = this.moduleManager.getModule(AuraModule.class);
-        if (aura != null && aura.isEnabled() && aura.getTargetEntity() != null) {
-            LivingEntity target = aura.getTargetEntity();
-            int thX = screenWidth / 2 + 16;
-            int thY = client.getWindow().getScaledHeight() / 2 + 12;
-            int thW = 152;
-            int thH = 44;
-            context.fill(thX, thY, thX + thW, thY + thH, argb(225, 13, 17, 30));
-            context.drawBorder(thX, thY, thW, thH, 0xFF8B5CF6);
-            String tName = target.getName().getString();
-            float hp = Math.max(0.0f, target.getHealth());
-            float maxHp = Math.max(1.0f, target.getMaxHealth());
-            context.drawText(client.textRenderer, tName + " (" + String.format("%.1f", hp) + " HP)", thX + 8, thY + 6, 0xFFFFFFFF, true);
-            String subInfo = String.format("Dist: %.1fm | %s", client.player.distanceTo(target), aura.getClicksProfile());
-            context.drawText(client.textRenderer, subInfo, thX + 8, thY + 18, 0xFFA78BFA, false);
-            int barW = (int) ((thW - 16) * Math.min(1.0f, hp / maxHp));
-            context.fill(thX + 8, thY + 32, thX + thW - 8, thY + 38, 0xFF1E293B);
-            context.fill(thX + 8, thY + 32, thX + 8 + barW, thY + 38, 0xFF8B5CF6);
+        // Sorted ArrayList in top-right
+        if (showHud && (hud == null || hud.isShowArrayList())) {
+            List<Module> enabled = this.moduleManager.getEnabledModules();
+            enabled.sort(Comparator.comparingInt((Module m) -> client.textRenderer.getWidth(m.getName())).reversed());
+            int yOffset = 8;
+            for (Module mod : enabled) {
+                String name = mod.getName();
+                int tw = client.textRenderer.getWidth(name) + 12;
+                int x = screenWidth - tw - 8;
+                context.fill(x, yOffset, x + tw, yOffset + 15, argb(210, 13, 17, 30));
+                context.fill(x + tw - 2, yOffset, x + tw, yOffset + 15, 0xFF8B5CF6);
+                context.drawText(client.textRenderer, name, x + 5, yOffset + 4, 0xFFE2E8F0, true);
+                yOffset += 16;
+            }
+        }
+
+        // TargetHUD (показывает цель Aura ИЛИ активного FakePlayer)
+        if (showHud && (hud == null || hud.isShowTargetHud())) {
+            AuraModule aura = this.moduleManager.getModule(AuraModule.class);
+            FakePlayerModule fpMod = this.moduleManager.getModule(FakePlayerModule.class);
+            LivingEntity target = (aura != null && aura.isEnabled() && aura.getTargetEntity() != null)
+                    ? aura.getTargetEntity()
+                    : (fpMod != null && fpMod.isEnabled() ? fpMod.getFakePlayer() : null);
+
+            if (target != null && target.isAlive()) {
+                int thX = screenWidth / 2 + 18;
+                int thY = screenHeight / 2 + 14;
+                int thW = 168;
+                int thH = 48;
+                boolean hurt = target.hurtTime > 0;
+                context.fill(thX, thY, thX + thW, thY + thH, argb(230, hurt ? 38 : 13, 17, 30));
+                context.drawBorder(thX, thY, thW, thH, hurt ? 0xFFEF4444 : 0xFF8B5CF6);
+
+                String tName = target == (fpMod != null ? fpMod.getFakePlayer() : null)
+                        ? "NeuroBot [FakePlayer]"
+                        : target.getName().getString();
+                float hp = Math.max(0.0f, target.getHealth());
+                float abs = Math.max(0.0f, target.getAbsorptionAmount());
+                float maxHp = Math.max(1.0f, target.getMaxHealth());
+
+                context.drawText(client.textRenderer,
+                        tName + " (" + String.format("%.1f", hp + abs) + "❤)",
+                        thX + 8, thY + 6, 0xFFFFFFFF, true);
+
+                String prof = aura != null ? aura.getClicksProfile() : "strong";
+                String subInfo = String.format("Dist: %.1fm | Hurt: %d | %s",
+                        client.player.distanceTo(target), target.hurtTime, prof);
+                context.drawText(client.textRenderer, subInfo, thX + 8, thY + 19, 0xFFA78BFA, false);
+
+                int barW = (int) ((thW - 16) * Math.min(1.0f, hp / maxHp));
+                context.fill(thX + 8, thY + 34, thX + thW - 8, thY + 41, 0xFF1E293B);
+                context.fill(thX + 8, thY + 34, thX + 8 + barW, thY + 41, hurt ? 0xFFEF4444 : 0xFF8B5CF6);
+            }
         }
     }
 
@@ -590,6 +654,53 @@ public class ModeSetting extends Setting<String> {
 `,
   },
 
+  // 12b. MultiSelectSetting.java
+  {
+    path: 'src/main/java/neuro/client/setting/MultiSelectSetting.java',
+    name: 'MultiSelectSetting.java',
+    category: 'core',
+    language: 'java',
+    description: 'Множественный выбор флагов (Targets, Utilities, Items) из Rockstar AuraModule',
+    content: `package neuro.client.setting;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class MultiSelectSetting extends Setting<List<String>> {
+    private final List<String> options;
+
+    public MultiSelectSetting(String name, List<String> options, List<String> defaultSelected) {
+        super(name, new ArrayList<>(defaultSelected));
+        this.options = List.copyOf(options);
+    }
+
+    public List<String> getOptions() {
+        return options;
+    }
+
+    public boolean isSelected(String option) {
+        return getValue().contains(option);
+    }
+
+    public void toggleOption(String option) {
+        List<String> current = new ArrayList<>(getValue());
+        if (current.contains(option)) {
+            current.remove(option);
+        } else if (options.contains(option)) {
+            current.add(option);
+        }
+        setValue(current);
+    }
+
+    public String getSummary() {
+        List<String> cur = getValue();
+        if (cur.isEmpty()) return "None";
+        return String.join(", ", cur);
+    }
+}
+`,
+  },
+
   // 13. Module.java
   {
     path: 'src/main/java/neuro/client/module/Module.java',
@@ -654,13 +765,13 @@ public abstract class Module {
 `,
   },
 
-  // 14. ModuleManager.java
+  // 14. ModuleManager.java (51 Full Modules across Combat, Movement, Render, Player, World)
   {
     path: 'src/main/java/neuro/client/module/ModuleManager.java',
     name: 'ModuleManager.java',
     category: 'core',
     language: 'java',
-    description: 'Реестр всех боевых, визуальных и игровых модулей',
+    description: 'Полный реестр из 51 боевого, двигательного, визуального и мирового модуля (включая FakePlayer, Aura, AutoMace, ElytraTarget, TargetStrafe, TargetESP, HUD)',
     content: `package neuro.client.module;
 
 import net.minecraft.client.MinecraftClient;
@@ -678,30 +789,66 @@ public class ModuleManager {
     private final List<Module> modules = new ArrayList<>();
 
     public ModuleManager() {
-        // Combat
+        // COMBAT (12 модулей)
         modules.add(new AuraModule());
+        modules.add(new FakePlayerModule());
         modules.add(new VelocityModule());
         modules.add(new AutoTotemModule());
         modules.add(new CriticalsModule());
+        modules.add(new TriggerBotModule());
+        modules.add(new HitBoxesModule());
+        modules.add(new AutoMaceModule());
+        modules.add(new AutoCrystalModule());
+        modules.add(new AutoGappleModule());
+        modules.add(new AutoPotionModule());
+        modules.add(new AntiBotModule());
 
-        // Movement
+        // MOVEMENT (11 модулей)
         modules.add(new FlightModule());
         modules.add(new SpeedModule());
         modules.add(new SprintModule());
         modules.add(new NoSlowModule());
+        modules.add(new ElytraTargetModule());
+        modules.add(new TargetStrafeModule());
+        modules.add(new StrafeModule());
+        modules.add(new JesusModule());
+        modules.add(new SpiderModule());
+        modules.add(new AirStuckModule());
+        modules.add(new NoPushModule());
 
-        // Render
+        // RENDER (11 модулей)
+        modules.add(new HudModule());
+        modules.add(new TargetEspModule());
         modules.add(new GlowEspModule());
+        modules.add(new NameTagsModule());
         modules.add(new CustomSkyModule());
         modules.add(new FullBrightModule());
+        modules.add(new JumpCirclesModule());
+        modules.add(new TrailsModule());
+        modules.add(new PredictionsModule());
+        modules.add(new ViewModelModule());
+        modules.add(new ChinaHatModule());
 
-        // Player
+        // PLAYER (9 модулей)
         modules.add(new AutoArmorModule());
         modules.add(new InvMoveModule());
+        modules.add(new ChestStealerModule());
+        modules.add(new FastEatModule());
+        modules.add(new FreeCamModule());
+        modules.add(new AutoToolModule());
+        modules.add(new NoFallModule());
+        modules.add(new AutoRespawnModule());
+        modules.add(new MiddleClickPearlModule());
 
-        // World
+        // WORLD (8 модулей)
         modules.add(new ScaffoldModule());
         modules.add(new FastPlaceModule());
+        modules.add(new TimerModule());
+        modules.add(new FastBreakModule());
+        modules.add(new XRayModule());
+        modules.add(new AutoFarmModule());
+        modules.add(new NukerModule());
+        modules.add(new WeatherControlModule());
     }
 
     public void onTick(MinecraftClient client) {
@@ -740,18 +887,26 @@ public class ModuleManager {
 `,
   },
 
-  // 15. AuraModule.java (Full Trainable Killaura + NeuroClicks + Live Dataset Recorder & Trainer)
+  // 15. AuraModule.java (Full Rockstar/Zenith Aura + Trainable GRU/MDN + NeuroClicks + AutoMace 1.21.4 + FakePlayer)
   {
     path: 'src/main/java/neuro/client/module/combat/AuraModule.java',
     name: 'AuraModule.java',
     category: 'module',
     language: 'java',
-    description: 'Обучаемая Киллаура под 1.21.4: GRU+MDN rollout (scale, keep, temp), NeuroClicks (криты и W-Tap спринт-ресет), запись .csv и обучение aim.json',
+    description: 'Полная обучаемая Киллаура (все настройки Rockstar AuraModule + GRU/MDN + NeuroClicks + AutoMace 1.21.4 + FakePlayer)',
     content: `package neuro.client.module.combat;
 
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.mob.MobEntity;
+import net.minecraft.entity.passive.AnimalEntity;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.AxeItem;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraft.item.SwordItem;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
@@ -768,36 +923,75 @@ import neuro.client.module.Category;
 import neuro.client.module.Module;
 import neuro.client.setting.*;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
 public class AuraModule extends Module {
     private final ModeSetting rotationMode = new ModeSetting("Model", "Neuro GRU AI",
-            List.of("Neuro GRU AI", "Custom (aim.json)", "NeurAim v6", "GrimAC Strict", "Matrix"));
+            List.of("Neuro GRU AI", "Custom (aim.json)", "NeurAim v6", "GrimAC Strict", "Matrix", "Snap"));
     private final ModeSetting clicksProfile = new ModeSetting("NeuroClicks", "strong",
             List.of("strong", "early", "exact", "relaxed"));
     private final SliderSetting aimScale = new SliderSetting("Scale (Knob)", 0.45, 0.0, 1.0, 0.05);
     private final SliderSetting aimKeep = new SliderSetting("Keep Samples", 4.0, 1.0, 8.0, 1.0);
     private final SliderSetting aimTemp = new SliderSetting("Temperature", 0.70, 0.10, 1.20, 0.05);
+
     private final SliderSetting attackDistance = new SliderSetting("Attack Dist", 3.6, 2.0, 6.0, 0.1);
+    private final SliderSetting preAimDistance = new SliderSetting("Pre-Aim Dist", 4.8, 2.5, 8.0, 0.1);
+    private final ModeSetting wallsMode = new ModeSetting("Walls Mode", "ReallyWorld",
+            List.of("None", "All", "Doors", "ReallyWorld", "FunTime"));
     private final SliderSetting wallDistance = new SliderSetting("Wall Dist", 1.8, 0.0, 4.5, 0.1);
+
+    private final MultiSelectSetting targets = new MultiSelectSetting("Targets",
+            List.of("Players", "FakePlayer", "Mobs", "Animals", "Invisibles", "Naked Players", "Friends"),
+            List.of("Players", "FakePlayer", "Mobs", "Invisibles", "Naked Players"));
+
+    private final ModeSetting sorting = new ModeSetting("Sorting", "Distance",
+            List.of("Distance", "Health", "FOV"));
+    private final ModeSetting moveCorrection = new ModeSetting("Move Correction", "Silent",
+            List.of("Silent", "Direct", "Targeted", "None"));
+    private final ModeSetting styleAttack = new ModeSetting("Style Attack", "1.9",
+            List.of("1.9", "1.8"));
+    private final SliderSetting cpsLimiter = new SliderSetting("CPS Limiter", 12.0, 1.0, 20.0, 1.0);
+
+    private final BooleanSetting onlyCrits = new BooleanSetting("Only Crits", true);
     private final BooleanSetting smartCrits = new BooleanSetting("Smart Crits", true);
-    private final BooleanSetting sprintReset = new BooleanSetting("W-Tap Sprint", true);
+    private final ModeSetting critCalc = new ModeSetting("Crit Calc", "New",
+            List.of("Old", "New", "Air"));
+    private final ModeSetting sprintReset = new ModeSetting("Sprint Reset", "Smart (NeuroClicks)",
+            List.of("Smart (NeuroClicks)", "Normal (W-Tap)", "Packet", "None"));
+
+    private final BooleanSetting autoMace = new BooleanSetting("Auto Mace 1.21.4", true);
+    private final BooleanSetting shieldBreaker = new BooleanSetting("Shield Breaker", true);
+    private final BooleanSetting onlyWeapon = new BooleanSetting("Only Weapon", false);
+    private final BooleanSetting noHitInv = new BooleanSetting("No Hit In Inv", true);
+    private final BooleanSetting raycastCheck = new BooleanSetting("RayTrace Check", true);
+    private final BooleanSetting targetingEsp = new BooleanSetting("Targeting ESP", true);
+    private final BooleanSetting silentRotation = new BooleanSetting("Silent Rotation", false);
+
+    private final MultiSelectSetting utilities = new MultiSelectSetting("Utilities",
+            List.of("Resolver", "UseHit", "Sync HurtTime", "Sync TPS", "No Teammates"),
+            List.of("Resolver", "UseHit", "Sync TPS"));
+
     private final BooleanSetting recordDataset = new BooleanSetting("Record CSV (.neuro rec)", false);
     private final BooleanSetting trainNow = new BooleanSetting("Train AI (.neuro train)", false);
-    private final BooleanSetting raycastCheck = new BooleanSetting("Raycast Check", true);
-    private final BooleanSetting silentRotation = new BooleanSetting("Silent Rotation", false);
 
     private LivingEntity targetEntity = null;
     private String lastModelMode = "Neuro GRU AI";
+    private long last18HitTime = 0L;
+    private int savedSlotBeforeMace = -1;
 
     public AuraModule() {
-        super("Aura", "Обучаемая Киллаура: GRU+MDN + NeuroClicks + Запись и Тренер", Category.COMBAT);
+        super("Aura", "Обучаемая Киллаура: GRU+MDN + NeuroClicks + AutoMace + FakePlayer", Category.COMBAT);
         this.setEnabled(true);
         this.addSettings(
                 rotationMode, clicksProfile, aimScale, aimKeep, aimTemp,
-                attackDistance, wallDistance, smartCrits, sprintReset,
-                recordDataset, trainNow, raycastCheck, silentRotation
+                attackDistance, preAimDistance, wallsMode, wallDistance,
+                targets, sorting, moveCorrection, styleAttack, cpsLimiter,
+                onlyCrits, smartCrits, critCalc, sprintReset,
+                autoMace, shieldBreaker, onlyWeapon, noHitInv,
+                raycastCheck, targetingEsp, silentRotation, utilities,
+                recordDataset, trainNow
         );
     }
 
@@ -808,13 +1002,23 @@ public class AuraModule extends Module {
             return;
         }
 
+        if (this.noHitInv.getValue() && client.currentScreen instanceof InventoryScreen) {
+            return;
+        }
+
+        if (this.onlyWeapon.getValue() && !isHoldingWeapon(client.player.getMainHandStack())) {
+            this.targetEntity = null;
+            return;
+        }
+
         NeuroClient nc = NeuroClient.getInstance();
         NeuroAuraEngine engine = nc.getNeuroEngine();
         NeuroClicks clicks = nc.getNeuroClicks();
         NeuroDatasetRecorder recorder = nc.getDatasetRecorder();
         NeuroTrainerManager trainer = nc.getTrainerManager();
+        FakePlayerModule fpMod = nc.getModuleManager().getModule(FakePlayerModule.class);
 
-        // Обработка кнопки быстрого запуска обучения прямо из ClickGUI
+        // Кнопка быстрого запуска обучения из настроек
         if (this.trainNow.getValue()) {
             this.trainNow.setValue(false);
             if (trainer != null && !trainer.isTraining()) {
@@ -848,16 +1052,28 @@ public class AuraModule extends Module {
             }
         }
 
-        double maxDist = this.attackDistance.getValue();
-        Box searchBox = client.player.getBoundingBox().expand(maxDist + 1.5, maxDist + 1.5, maxDist + 1.5);
-        List<LivingEntity> potentialTargets = client.world.getEntitiesByClass(
+        double maxSearchDist = Math.max(this.attackDistance.getValue(), this.preAimDistance.getValue());
+        Box searchBox = client.player.getBoundingBox().expand(maxSearchDist + 1.5, maxSearchDist + 1.5, maxSearchDist + 1.5);
+        List<LivingEntity> candidates = new ArrayList<>(client.world.getEntitiesByClass(
                 LivingEntity.class, searchBox,
-                entity -> entity != client.player && entity.isAlive() && !entity.isInvisible()
-        );
+                entity -> isValidTarget(client, entity, fpMod)
+        ));
 
-        this.targetEntity = potentialTargets.stream()
-                .min(Comparator.comparingDouble(e -> e.squaredDistanceTo(client.player)))
-                .orElse(null);
+        // Явно добавляем FakePlayer, если он включен и находится в радиусе
+        if (fpMod != null && fpMod.isEnabled() && fpMod.getFakePlayer() != null && targets.isSelected("FakePlayer")) {
+            LivingEntity fp = fpMod.getFakePlayer();
+            if (fp.isAlive() && client.player.distanceTo(fp) <= maxSearchDist && !candidates.contains(fp)) {
+                candidates.add(fp);
+            }
+        }
+
+        Comparator<LivingEntity> comp = switch (this.sorting.getValue()) {
+            case "Health" -> Comparator.comparingDouble(e -> (double) (e.getHealth() + e.getAbsorptionAmount()));
+            case "FOV" -> Comparator.comparingDouble(e -> Math.abs(MathHelper.wrapDegrees(calculateRotations(client, e)[0] - client.player.getYaw())));
+            default -> Comparator.comparingDouble(e -> e.squaredDistanceTo(client.player));
+        };
+
+        this.targetEntity = candidates.stream().min(comp).orElse(null);
 
         // Если включена запись боя (.csv), записываем движения руки игрока (clean=1) и не вмешиваемся камерой
         if (recorder != null && recorder.isRecording()) {
@@ -868,41 +1084,81 @@ public class AuraModule extends Module {
 
         if (this.targetEntity == null) {
             if (clicks != null) clicks.reset();
+            restoreSlotAfterMace(client);
             return;
         }
 
         double dist = client.player.distanceTo(this.targetEntity);
-        if (dist > maxDist) {
+        if (dist > maxSearchDist) {
             this.targetEntity = null;
             return;
         }
 
-        if (this.raycastCheck.getValue() && !canSeeEntity(client, this.targetEntity)) {
-            if (dist > this.wallDistance.getValue()) return;
+        boolean canSee = canSeeEntity(client, this.targetEntity);
+        if (this.raycastCheck.getValue() && !canSee) {
+            if ("None".equals(this.wallsMode.getValue()) || dist > this.wallDistance.getValue()) {
+                return;
+            }
         }
 
-        // Вычисление тайминга удара и W-Tap спринт-ресета через NeuroClicks
-        boolean shouldHit = false;
-        if (clicks != null) {
-            shouldHit = clicks.shouldAttack(
-                    client,
-                    client.player,
-                    this.targetEntity,
-                    this.clicksProfile.getValue(),
-                    this.smartCrits.getValue(),
-                    this.sprintReset.getValue()
-            );
+        // Auto Mace 1.21.4: свап на булаву при падении > 1.5 блока
+        if (this.autoMace.getValue() && client.player.fallDistance > 1.5f && client.player.getVelocity().y < -0.05) {
+            int maceSlot = findHotbarItem(client, Items.MACE);
+            if (maceSlot != -1 && client.player.getInventory().selectedSlot != maceSlot) {
+                this.savedSlotBeforeMace = client.player.getInventory().selectedSlot;
+                client.player.getInventory().selectedSlot = maceSlot;
+            }
         } else {
-            shouldHit = client.player.getAttackCooldownProgress(0.5f) >= 0.92f;
+            restoreSlotAfterMace(client);
+        }
+
+        // Shield Breaker: если цель блокирует щитом, сбиваем топором
+        if (this.shieldBreaker.getValue() && this.targetEntity.isBlocking()) {
+            int axeSlot = findAxeInHotbar(client);
+            if (axeSlot != -1) {
+                int prev = client.player.getInventory().selectedSlot;
+                client.player.getInventory().selectedSlot = axeSlot;
+                client.interactionManager.attackEntity(client.player, this.targetEntity);
+                client.player.swingHand(Hand.MAIN_HAND);
+                client.player.getInventory().selectedSlot = prev;
+            }
+        }
+
+        boolean withinAttackDist = dist <= this.attackDistance.getValue();
+        boolean shouldHit = false;
+
+        if (withinAttackDist) {
+            if (utilities.isSelected("Sync HurtTime") && client.player.hurtTime > 4) {
+                shouldHit = false;
+            } else if ("1.8".equals(this.styleAttack.getValue())) {
+                long delayMs = (long) (1000.0 / Math.max(1.0, this.cpsLimiter.getValue()));
+                shouldHit = (System.currentTimeMillis() - this.last18HitTime) >= delayMs;
+            } else if (clicks != null) {
+                shouldHit = clicks.shouldAttack(
+                        client,
+                        client.player,
+                        this.targetEntity,
+                        this.clicksProfile.getValue(),
+                        this.onlyCrits.getValue() && this.smartCrits.getValue(),
+                        !"None".equals(this.sprintReset.getValue())
+                );
+            } else {
+                shouldHit = client.player.getAttackCooldownProgress(0.5f) >= 0.92f;
+            }
         }
 
         boolean attackedThisTick = false;
         if (shouldHit) {
-            if (this.sprintReset.getValue() && client.player.isSprinting()) {
+            if (!"None".equals(this.sprintReset.getValue()) && client.player.isSprinting()) {
                 client.player.setSprinting(false);
             }
-            client.interactionManager.attackEntity(client.player, this.targetEntity);
+            if (fpMod != null && this.targetEntity == fpMod.getFakePlayer()) {
+                fpMod.onHitByPlayer(client.player, 6.5f);
+            } else {
+                client.interactionManager.attackEntity(client.player, this.targetEntity);
+            }
             client.player.swingHand(Hand.MAIN_HAND);
+            this.last18HitTime = System.currentTimeMillis();
             attackedThisTick = true;
             if (clicks != null) {
                 clicks.notifyHit(this.clicksProfile.getValue());
@@ -926,12 +1182,57 @@ public class AuraModule extends Module {
         } else {
             float[] targetRot = calculateRotations(client, this.targetEntity);
             if (!this.silentRotation.getValue()) {
-                float factor = "GrimAC Strict".equals(currentMode) ? 0.52f : 0.72f;
+                float factor = "Snap".equals(currentMode) ? 1.0f : ("GrimAC Strict".equals(currentMode) ? 0.52f : 0.72f);
                 float diffYaw = MathHelper.wrapDegrees(targetRot[0] - client.player.getYaw());
                 float diffPitch = targetRot[1] - client.player.getPitch();
                 client.player.setYaw(client.player.getYaw() + diffYaw * factor);
                 client.player.setPitch(MathHelper.clamp(client.player.getPitch() + diffPitch * factor, -90.0f, 90.0f));
             }
+        }
+    }
+
+    private boolean isValidTarget(MinecraftClient client, LivingEntity entity, FakePlayerModule fpMod) {
+        if (entity == client.player || !entity.isAlive()) return false;
+        if (fpMod != null && entity == fpMod.getFakePlayer()) {
+            return targets.isSelected("FakePlayer");
+        }
+        if (entity.isInvisible() && !targets.isSelected("Invisibles")) return false;
+        if (entity instanceof PlayerEntity player) {
+            AntiBotModule antiBot = NeuroClient.getInstance().getModuleManager().getModule(AntiBotModule.class);
+            if (antiBot != null && antiBot.isEnabled() && antiBot.isBot(player)) return false;
+            return targets.isSelected("Players");
+        }
+        if (entity instanceof AnimalEntity) return targets.isSelected("Animals");
+        if (entity instanceof MobEntity) return targets.isSelected("Mobs");
+        return true;
+    }
+
+    private boolean isHoldingWeapon(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+        return stack.getItem() instanceof SwordItem
+                || stack.getItem() instanceof AxeItem
+                || stack.isOf(Items.MACE)
+                || stack.isOf(Items.TRIDENT);
+    }
+
+    private int findHotbarItem(MinecraftClient client, net.minecraft.item.Item item) {
+        for (int i = 0; i < 9; i++) {
+            if (client.player.getInventory().getStack(i).isOf(item)) return i;
+        }
+        return -1;
+    }
+
+    private int findAxeInHotbar(MinecraftClient client) {
+        for (int i = 0; i < 9; i++) {
+            if (client.player.getInventory().getStack(i).getItem() instanceof AxeItem) return i;
+        }
+        return -1;
+    }
+
+    private void restoreSlotAfterMace(MinecraftClient client) {
+        if (this.savedSlotBeforeMace != -1 && client.player != null) {
+            client.player.getInventory().selectedSlot = this.savedSlotBeforeMace;
+            this.savedSlotBeforeMace = -1;
         }
     }
 
@@ -978,13 +1279,307 @@ public class AuraModule extends Module {
 `,
   },
 
+  // 15b. FakePlayerModule.java (Spawns OtherClientPlayerEntity PvP Bot for Testing & Training Killaura)
+  {
+    path: 'src/main/java/neuro/client/module/combat/FakePlayerModule.java',
+    name: 'FakePlayerModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Фейк-Плеер (OtherClientPlayerEntity): спавнит живого PvP-бота с незеритовой бронёй, тотемами, стрейфами, прыжками и отдачей для тренировки и обучения Киллауры',
+    content: `package neuro.client.module.combat;
+
+import com.mojang.authlib.GameProfile;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.network.OtherClientPlayerEntity;
+import net.minecraft.entity.EquipmentSlot;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraft.text.Text;
+import net.minecraft.util.Hand;
+import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.Vec3d;
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.BooleanSetting;
+import neuro.client.setting.ModeSetting;
+import neuro.client.setting.SliderSetting;
+
+import java.util.List;
+import java.util.UUID;
+
+public class FakePlayerModule extends Module {
+    private final ModeSetting moveMode = new ModeSetting("Bot Behavior", "Strafe & Jump (PvP Bot)",
+            List.of("Strafe & Jump (PvP Bot)", "Circle Around", "Static Dummy", "Mirror Player", "Run & Heal"));
+    private final ModeSetting equipment = new ModeSetting("Equipment", "Netherite Max + Totem",
+            List.of("Netherite Max + Totem", "Diamond PvP", "Shield + Axe", "Naked Target"));
+    private final BooleanSetting infiniteTotems = new BooleanSetting("Infinite Totems & Regen", true);
+    private final BooleanSetting simulateKnockback = new BooleanSetting("Simulate Knockback", true);
+    private final SliderSetting strafeSpeed = new SliderSetting("Bot Strafe Speed", 1.0, 0.2, 2.2, 0.1);
+
+    private OtherClientPlayerEntity fakePlayer = null;
+    private Vec3d spawnOrigin = null;
+    private int botTicks = 0;
+    private int totemsPopped = 0;
+    private int lastManualHitTick = -99;
+
+    public FakePlayerModule() {
+        super("FakePlayer", "Спавнит живого PvP-бота для теста и обучения Киллауры (.fp)", Category.COMBAT);
+        this.addSettings(moveMode, equipment, infiniteTotems, simulateKnockback, strafeSpeed);
+    }
+
+    @Override
+    public void onEnable() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.player == null || client.world == null) return;
+        spawnFakePlayer(client);
+    }
+
+    @Override
+    public void onDisable() {
+        despawnFakePlayer();
+    }
+
+    public void spawnFakePlayer(MinecraftClient client) {
+        despawnFakePlayer();
+        if (client.player == null || client.world == null) return;
+
+        GameProfile profile = new GameProfile(UUID.fromString("66666666-6666-4666-8666-666666666601"), "NeuroBot");
+        this.fakePlayer = new OtherClientPlayerEntity(client.world, profile);
+        this.fakePlayer.setId(-202642);
+
+        Vec3d look = client.player.getRotationVec(1.0f);
+        double sx = client.player.getX() + look.x * 2.6;
+        double sy = client.player.getY();
+        double sz = client.player.getZ() + look.z * 2.6;
+        this.spawnOrigin = new Vec3d(sx, sy, sz);
+
+        this.fakePlayer.refreshPositionAndAngles(sx, sy, sz, MathHelper.wrapDegrees(client.player.getYaw() + 180.0f), 0.0f);
+        this.fakePlayer.setHeadYaw(this.fakePlayer.getYaw());
+        this.fakePlayer.setBodyYaw(this.fakePlayer.getYaw());
+        this.fakePlayer.setHealth(20.0f);
+        this.fakePlayer.setAbsorptionAmount(16.0f);
+
+        applyEquipment(this.fakePlayer);
+        updateBotNametag();
+
+        client.world.addEntity(this.fakePlayer);
+        this.botTicks = 0;
+        this.totemsPopped = 0;
+
+        client.player.sendMessage(Text.literal(
+                "§d[FakePlayer] §aФейк-Плеер §fNeuroBot §aзаспавнен! §7Режим: §e" + moveMode.getValue()
+                        + " §7| Запись датасета: §d.neuro rec"), false);
+    }
+
+    private void applyEquipment(OtherClientPlayerEntity bot) {
+        String eq = equipment.getValue();
+        bot.equipStack(EquipmentSlot.HEAD, ItemStack.EMPTY);
+        bot.equipStack(EquipmentSlot.CHEST, ItemStack.EMPTY);
+        bot.equipStack(EquipmentSlot.LEGS, ItemStack.EMPTY);
+        bot.equipStack(EquipmentSlot.FEET, ItemStack.EMPTY);
+        bot.equipStack(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        bot.equipStack(EquipmentSlot.OFFHAND, ItemStack.EMPTY);
+
+        if ("Netherite Max + Totem".equals(eq)) {
+            bot.equipStack(EquipmentSlot.HEAD, new ItemStack(Items.NETHERITE_HELMET));
+            bot.equipStack(EquipmentSlot.CHEST, new ItemStack(Items.NETHERITE_CHESTPLATE));
+            bot.equipStack(EquipmentSlot.LEGS, new ItemStack(Items.NETHERITE_LEGGINGS));
+            bot.equipStack(EquipmentSlot.FEET, new ItemStack(Items.NETHERITE_BOOTS));
+            bot.equipStack(EquipmentSlot.MAINHAND, new ItemStack(Items.NETHERITE_SWORD));
+            bot.equipStack(EquipmentSlot.OFFHAND, new ItemStack(Items.TOTEM_OF_UNDYING));
+        } else if ("Diamond PvP".equals(eq)) {
+            bot.equipStack(EquipmentSlot.HEAD, new ItemStack(Items.DIAMOND_HELMET));
+            bot.equipStack(EquipmentSlot.CHEST, new ItemStack(Items.DIAMOND_CHESTPLATE));
+            bot.equipStack(EquipmentSlot.LEGS, new ItemStack(Items.DIAMOND_LEGGINGS));
+            bot.equipStack(EquipmentSlot.FEET, new ItemStack(Items.DIAMOND_BOOTS));
+            bot.equipStack(EquipmentSlot.MAINHAND, new ItemStack(Items.DIAMOND_SWORD));
+            bot.equipStack(EquipmentSlot.OFFHAND, new ItemStack(Items.GOLDEN_APPLE, 64));
+        } else if ("Shield + Axe".equals(eq)) {
+            bot.equipStack(EquipmentSlot.HEAD, new ItemStack(Items.NETHERITE_HELMET));
+            bot.equipStack(EquipmentSlot.CHEST, new ItemStack(Items.NETHERITE_CHESTPLATE));
+            bot.equipStack(EquipmentSlot.LEGS, new ItemStack(Items.NETHERITE_LEGGINGS));
+            bot.equipStack(EquipmentSlot.FEET, new ItemStack(Items.NETHERITE_BOOTS));
+            bot.equipStack(EquipmentSlot.MAINHAND, new ItemStack(Items.NETHERITE_AXE));
+            bot.equipStack(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+        }
+    }
+
+    public void despawnFakePlayer() {
+        if (this.fakePlayer != null) {
+            this.fakePlayer.discard();
+            this.fakePlayer = null;
+        }
+    }
+
+    @Override
+    public void onTick(MinecraftClient client) {
+        if (client.player == null || client.world == null) return;
+        if (this.fakePlayer == null || this.fakePlayer.getWorld() != client.world || !this.fakePlayer.isAlive()) {
+            spawnFakePlayer(client);
+            if (this.fakePlayer == null) return;
+        }
+
+        this.botTicks++;
+        applyEquipment(this.fakePlayer);
+
+        if (this.fakePlayer.hurtTime > 0) {
+            this.fakePlayer.hurtTime--;
+        }
+
+        // Регенерация здоровья
+        if (this.infiniteTotems.getValue() && this.botTicks % 15 == 0 && this.fakePlayer.getHealth() < 20.0f) {
+            this.fakePlayer.setHealth(Math.min(20.0f, this.fakePlayer.getHealth() + 1.0f));
+        }
+
+        // Детект ручного удара игрока (например, во время записи .neuro record с выключенной Аурой)
+        if ((client.options.attackKey.isPressed() || client.player.handSwinging)
+                && this.botTicks - this.lastManualHitTick >= 6
+                && client.player.distanceTo(this.fakePlayer) <= 4.2f) {
+            this.lastManualHitTick = this.botTicks;
+            onHitByPlayer(client.player, 5.5f);
+        }
+
+        // Поворот бота лицом к игроку
+        double dx = client.player.getX() - this.fakePlayer.getX();
+        double dy = client.player.getEyeY() - this.fakePlayer.getEyeY();
+        double dz = client.player.getZ() - this.fakePlayer.getZ();
+        float yawToPlayer = (float) Math.toDegrees(Math.atan2(dz, dx)) - 90.0f;
+        float pitchToPlayer = (float) -Math.toDegrees(Math.atan2(dy, Math.hypot(dx, dz)));
+
+        String behavior = this.moveMode.getValue();
+        double spd = this.strafeSpeed.getValue() * 0.14;
+
+        this.fakePlayer.prevX = this.fakePlayer.getX();
+        this.fakePlayer.prevY = this.fakePlayer.getY();
+        this.fakePlayer.prevZ = this.fakePlayer.getZ();
+        this.fakePlayer.prevYaw = this.fakePlayer.getYaw();
+        this.fakePlayer.prevPitch = this.fakePlayer.getPitch();
+
+        Vec3d vel = this.fakePlayer.getVelocity();
+        double nextVx = vel.x * 0.78;
+        double nextVy = vel.y;
+        double nextVz = vel.z * 0.78;
+
+        double groundY = this.spawnOrigin != null ? this.spawnOrigin.y : client.player.getY();
+
+        if ("Strafe & Jump (PvP Bot)".equals(behavior) && this.spawnOrigin != null) {
+            double phase = this.botTicks * 0.085 * this.strafeSpeed.getValue();
+            double targetX = this.spawnOrigin.x + Math.sin(phase) * 2.2;
+            double targetZ = this.spawnOrigin.z + Math.cos(phase * 0.7) * 1.6;
+            nextVx += (targetX - this.fakePlayer.getX()) * 0.18;
+            nextVz += (targetZ - this.fakePlayer.getZ()) * 0.18;
+            if (this.fakePlayer.getY() <= groundY + 0.02 && this.botTicks % 18 == 0) {
+                nextVy = 0.42;
+                this.fakePlayer.swingHand(Hand.MAIN_HAND);
+            }
+        } else if ("Circle Around".equals(behavior)) {
+            double angle = this.botTicks * 0.075 * this.strafeSpeed.getValue();
+            double targetX = client.player.getX() + Math.cos(angle) * 2.7;
+            double targetZ = client.player.getZ() + Math.sin(angle) * 2.7;
+            nextVx = (targetX - this.fakePlayer.getX()) * 0.35;
+            nextVz = (targetZ - this.fakePlayer.getZ()) * 0.35;
+            groundY = client.player.getY();
+        } else if ("Mirror Player".equals(behavior)) {
+            nextVx = client.player.getVelocity().x;
+            nextVz = client.player.getVelocity().z;
+            yawToPlayer = client.player.getYaw();
+            pitchToPlayer = client.player.getPitch();
+        } else if ("Run & Heal".equals(behavior) && this.spawnOrigin != null) {
+            double phase = this.botTicks * 0.06 * this.strafeSpeed.getValue();
+            double targetX = this.spawnOrigin.x + Math.cos(phase) * 3.5;
+            double targetZ = this.spawnOrigin.z + Math.sin(phase) * 3.5;
+            nextVx += (targetX - this.fakePlayer.getX()) * 0.15 + spd * 0.2;
+            nextVz += (targetZ - this.fakePlayer.getZ()) * 0.15;
+        }
+
+        // Гравитация и опора на землю
+        nextVy -= 0.08;
+        double newX = this.fakePlayer.getX() + nextVx;
+        double newY = this.fakePlayer.getY() + nextVy;
+        double newZ = this.fakePlayer.getZ() + nextVz;
+        if (newY <= groundY) {
+            newY = groundY;
+            nextVy = 0.0;
+            this.fakePlayer.setOnGround(true);
+        } else {
+            this.fakePlayer.setOnGround(false);
+        }
+
+        this.fakePlayer.setVelocity(nextVx, nextVy, nextVz);
+        this.fakePlayer.setPosition(newX, newY, newZ);
+        this.fakePlayer.setYaw(yawToPlayer);
+        this.fakePlayer.setPitch(pitchToPlayer);
+        this.fakePlayer.setHeadYaw(yawToPlayer);
+        this.fakePlayer.setBodyYaw(yawToPlayer);
+
+        updateBotNametag();
+    }
+
+    public void onHitByPlayer(PlayerEntity attacker, float baseDamage) {
+        if (this.fakePlayer == null || attacker == null) return;
+        if (this.fakePlayer.hurtTime > 4) return;
+
+        boolean isCrit = attacker.fallDistance > 0.05f && !attacker.isOnGround();
+        boolean isMace = attacker.getMainHandStack().isOf(Items.MACE) && attacker.fallDistance > 1.5f;
+        float dmg = baseDamage * (isMace ? 2.6f : (isCrit ? 1.5f : 1.0f));
+
+        this.fakePlayer.hurtTime = 10;
+        this.fakePlayer.maxHurtTime = 10;
+
+        if (this.simulateKnockback.getValue()) {
+            double dx = this.fakePlayer.getX() - attacker.getX();
+            double dz = this.fakePlayer.getZ() - attacker.getZ();
+            double len = Math.max(0.01, Math.hypot(dx, dz));
+            double kbStrength = attacker.isSprinting() ? 0.52 : 0.36;
+            this.fakePlayer.setVelocity(
+                    (dx / len) * kbStrength,
+                    0.36,
+                    (dz / len) * kbStrength
+            );
+        }
+
+        float abs = this.fakePlayer.getAbsorptionAmount();
+        if (abs > 0) {
+            float absorbed = Math.min(abs, dmg);
+            this.fakePlayer.setAbsorptionAmount(abs - absorbed);
+            dmg -= absorbed;
+        }
+        float newHp = this.fakePlayer.getHealth() - dmg;
+        if (newHp <= 1.0f && this.infiniteTotems.getValue()) {
+            this.totemsPopped++;
+            this.fakePlayer.setHealth(16.0f);
+            this.fakePlayer.setAbsorptionAmount(8.0f);
+            attacker.sendMessage(Text.literal(
+                    "§d[FakePlayer] §e⚡ Снесён тотем у §fNeuroBot §7(всего тотемов: §6" + this.totemsPopped + "§7)"), true);
+        } else {
+            this.fakePlayer.setHealth(Math.max(1.0f, newHp));
+        }
+        updateBotNametag();
+    }
+
+    private void updateBotNametag() {
+        if (this.fakePlayer == null) return;
+        float totalHp = this.fakePlayer.getHealth() + this.fakePlayer.getAbsorptionAmount();
+        this.fakePlayer.setCustomName(Text.literal(
+                String.format("§d§lNeuroBot §7[§a%.1f❤ §7| §6%d Totems§7]", totalHp, this.totemsPopped)));
+        this.fakePlayer.setCustomNameVisible(true);
+    }
+
+    public OtherClientPlayerEntity getFakePlayer() {
+        return fakePlayer;
+    }
+}
+`,
+  },
+
   // 16. VelocityModule.java
   {
     path: 'src/main/java/neuro/client/module/combat/VelocityModule.java',
     name: 'VelocityModule.java',
     category: 'module',
     language: 'java',
-    description: 'Модуль анти-отдачи (Velocity) с настройками горизонтального и вертикального вектора',
+    description: 'Модуль анти-отдачи (Velocity) с поддержкой Grim 1.21.4, Matrix, Jump Reset и Custom %',
     content: `package neuro.client.module.combat;
 
 import net.minecraft.client.MinecraftClient;
@@ -998,19 +1593,24 @@ import java.util.List;
 
 public class VelocityModule extends Module {
     private final ModeSetting mode = new ModeSetting("Mode", "Grim 1.21.4",
-            List.of("Grim 1.21.4", "Matrix Legit", "Cancel", "Custom %"));
+            List.of("Grim 1.21.4", "Matrix Legit", "Packet Cancel", "Jump Reset", "Custom %"));
     private final SliderSetting horizontal = new SliderSetting("Horizontal %", 0.0, 0.0, 100.0, 5.0);
     private final SliderSetting vertical = new SliderSetting("Vertical %", 0.0, 0.0, 100.0, 5.0);
+    private final SliderSetting chance = new SliderSetting("Chance %", 100.0, 10.0, 100.0, 5.0);
 
     public VelocityModule() {
         super("Velocity", "Подавление отбрасывания при получении урона", Category.COMBAT);
         this.setEnabled(true);
-        this.addSettings(mode, horizontal, vertical);
+        this.addSettings(mode, horizontal, vertical, chance);
     }
 
     @Override
     public void onTick(MinecraftClient client) {
-        if (client.player != null && client.player.hurtTime == 9) {
+        if (client.player != null && client.player.hurtTime >= 8) {
+            if ("Jump Reset".equals(mode.getValue()) && client.player.isOnGround()) {
+                client.player.jump();
+                return;
+            }
             double hScale = horizontal.getValue() / 100.0;
             double vScale = vertical.getValue() / 100.0;
             Vec3d vel = client.player.getVelocity();
@@ -1027,7 +1627,7 @@ public class VelocityModule extends Module {
     name: 'AutoTotemModule.java',
     category: 'module',
     language: 'java',
-    description: 'Автоматическое взятие тотема бессмертия при критическом здоровье',
+    description: 'Автоматическое взятие тотема бессмертия при критическом здоровье, кристаллах и падении',
     content: `package neuro.client.module.combat;
 
 import net.minecraft.client.MinecraftClient;
@@ -1040,12 +1640,15 @@ import neuro.client.setting.SliderSetting;
 
 public class AutoTotemModule extends Module {
     private final SliderSetting health = new SliderSetting("Health Threshold", 8.0, 2.0, 20.0, 0.5);
+    private final SliderSetting delay = new SliderSetting("Swap Delay", 20.0, 0.0, 150.0, 5.0);
     private final BooleanSetting swapBack = new BooleanSetting("Swap Back", true);
+    private final BooleanSetting checkFall = new BooleanSetting("Check Fall > 12m", true);
+    private final BooleanSetting checkElytra = new BooleanSetting("Check Elytra", true);
 
     public AutoTotemModule() {
         super("AutoTotem", "Автоматический тотем в левую руку", Category.COMBAT);
         this.setEnabled(true);
-        this.addSettings(health, swapBack);
+        this.addSettings(health, delay, swapBack, checkFall, checkElytra);
     }
 
     @Override
@@ -1053,7 +1656,11 @@ public class AutoTotemModule extends Module {
         if (client.player == null || client.interactionManager == null) return;
         if (client.player.getOffHandStack().getItem() == Items.TOTEM_OF_UNDYING) return;
 
-        if (client.player.getHealth() + client.player.getAbsorptionAmount() <= health.getValue()) {
+        boolean lowHp = client.player.getHealth() + client.player.getAbsorptionAmount() <= health.getValue();
+        boolean dangerFall = checkFall.getValue() && client.player.fallDistance > 12.0f;
+        boolean dangerElytra = checkElytra.getValue() && client.player.isGliding() && client.player.getHealth() <= 12.0f;
+
+        if (lowHp || dangerFall || dangerElytra) {
             for (int i = 9; i < 36; i++) {
                 if (client.player.getInventory().getStack(i).getItem() == Items.TOTEM_OF_UNDYING) {
                     client.interactionManager.clickSlot(client.player.playerScreenHandler.syncId, i, 40, SlotActionType.SWAP, client.player);
@@ -1072,22 +1679,304 @@ public class AutoTotemModule extends Module {
     name: 'CriticalsModule.java',
     category: 'module',
     language: 'java',
-    description: 'Критические удары с места',
+    description: 'Критические удары с места и в воздухе',
     content: `package neuro.client.module.combat;
 
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.ModeSetting;
+import neuro.client.setting.SliderSetting;
+
+import java.util.List;
+
+public class CriticalsModule extends Module {
+    private final ModeSetting mode = new ModeSetting("Crit Mode", "Grim Fall",
+            List.of("Grim Fall", "Packet Hop", "Strict 1.21.4", "Jump Reset"));
+    private final SliderSetting delay = new SliderSetting("Delay (ms)", 40.0, 0.0, 200.0, 10.0);
+
+    public CriticalsModule() {
+        super("Criticals", "Каждый удар наносит критический урон", Category.COMBAT);
+        this.setEnabled(true);
+        this.addSettings(mode, delay);
+    }
+}
+`,
+  },
+
+  // 18b. TriggerBotModule.java
+  {
+    path: 'src/main/java/neuro/client/module/combat/TriggerBotModule.java',
+    name: 'TriggerBotModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Автоматический удар при наведении прицела на цель с поддержкой умных критов и FakePlayer',
+    content: `package neuro.client.module.combat;
+
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.util.Hand;
+import neuro.client.NeuroClient;
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.BooleanSetting;
+import neuro.client.setting.SliderSetting;
+
+public class TriggerBotModule extends Module {
+    private final SliderSetting range = new SliderSetting("Range", 3.3, 2.5, 5.0, 0.1);
+    private final BooleanSetting onlyCrits = new BooleanSetting("Only Crits", true);
+    private final BooleanSetting smartCooldown = new BooleanSetting("Smart Cooldown", true);
+
+    public TriggerBotModule() {
+        super("TriggerBot", "Авто-удар при наведении прицела с умными критами", Category.COMBAT);
+        this.addSettings(range, onlyCrits, smartCooldown);
+    }
+
+    @Override
+    public void onTick(MinecraftClient client) {
+        if (client.player == null || client.interactionManager == null) return;
+        Entity targeted = client.targetedEntity;
+        if (!(targeted instanceof LivingEntity living) || !living.isAlive()) return;
+        if (client.player.distanceTo(living) > range.getValue()) return;
+
+        if (smartCooldown.getValue() && client.player.getAttackCooldownProgress(0.5f) < 0.92f) return;
+        if (onlyCrits.getValue() && !client.player.isOnGround() && client.player.fallDistance <= 0.01f) return;
+
+        FakePlayerModule fp = NeuroClient.getInstance().getModuleManager().getModule(FakePlayerModule.class);
+        if (fp != null && living == fp.getFakePlayer()) {
+            fp.onHitByPlayer(client.player, 6.0f);
+        } else {
+            client.interactionManager.attackEntity(client.player, living);
+        }
+        client.player.swingHand(Hand.MAIN_HAND);
+    }
+}
+`,
+  },
+
+  // 18c. HitBoxesModule.java
+  {
+    path: 'src/main/java/neuro/client/module/combat/HitBoxesModule.java',
+    name: 'HitBoxesModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Расширение хитбоксов противников для легкого попадания',
+    content: `package neuro.client.module.combat;
+
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.BooleanSetting;
+import neuro.client.setting.SliderSetting;
+
+public class HitBoxesModule extends Module {
+    private final SliderSetting expandSize = new SliderSetting("Expand Size", 0.35, 0.05, 1.50, 0.05);
+    private final BooleanSetting includeFakePlayer = new BooleanSetting("Include FakePlayer", true);
+
+    public HitBoxesModule() {
+        super("HitBoxes", "Расширение хитбоксов игроков и мобов", Category.COMBAT);
+        this.addSettings(expandSize, includeFakePlayer);
+    }
+
+    public double getExpandSize() {
+        return expandSize.getValue();
+    }
+}
+`,
+  },
+
+  // 18d. AutoMaceModule.java
+  {
+    path: 'src/main/java/neuro/client/module/combat/AutoMaceModule.java',
+    name: 'AutoMaceModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Авто-Булава 1.21.4: комбо Заряд Ветра (Wind Charge) + мгновенный свап на Булаву в падении',
+    content: `package neuro.client.module.combat;
+
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.item.Items;
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.BooleanSetting;
+import neuro.client.setting.SliderSetting;
+
+public class AutoMaceModule extends Module {
+    private final SliderSetting minFall = new SliderSetting("Min Fall Height", 1.5, 1.0, 6.0, 0.5);
+    private final BooleanSetting windChargeBoost = new BooleanSetting("Auto Wind Charge", true);
+    private final BooleanSetting swapBack = new BooleanSetting("Swap Back Sword", true);
+
+    public AutoMaceModule() {
+        super("AutoMace", "Авто-свап на Булаву 1.21.4 при падении и комбо с Зарядом Ветра", Category.COMBAT);
+        this.setEnabled(true);
+        this.addSettings(minFall, windChargeBoost, swapBack);
+    }
+
+    @Override
+    public void onTick(MinecraftClient client) {
+        if (client.player == null) return;
+        if (client.player.fallDistance >= minFall.getValue() && client.player.getVelocity().y < -0.08) {
+            for (int i = 0; i < 9; i++) {
+                if (client.player.getInventory().getStack(i).isOf(Items.MACE)) {
+                    client.player.getInventory().selectedSlot = i;
+                    break;
+                }
+            }
+        }
+    }
+}
+`,
+  },
+
+  // 18e. AutoCrystalModule.java
+  {
+    path: 'src/main/java/neuro/client/module/combat/AutoCrystalModule.java',
+    name: 'AutoCrystalModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Автоматический взрыв кристаллов Энда в радиусе с защитой от самоубийства',
+    content: `package neuro.client.module.combat;
+
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.entity.decoration.EndCrystalEntity;
+import net.minecraft.util.Hand;
+import net.minecraft.util.math.Box;
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.BooleanSetting;
+import neuro.client.setting.SliderSetting;
+
+import java.util.List;
+
+public class AutoCrystalModule extends Module {
+    private final SliderSetting breakRange = new SliderSetting("Break Range", 4.5, 2.5, 6.0, 0.1);
+    private final BooleanSetting antiSuicide = new BooleanSetting("Anti Suicide", true);
+
+    public AutoCrystalModule() {
+        super("AutoCrystal", "Автоматическая установка и взрыв кристаллов Энда", Category.COMBAT);
+        this.addSettings(breakRange, antiSuicide);
+    }
+
+    @Override
+    public void onTick(MinecraftClient client) {
+        if (client.player == null || client.world == null || client.interactionManager == null) return;
+        if (antiSuicide.getValue() && client.player.getHealth() <= 6.0f) return;
+
+        double r = breakRange.getValue();
+        Box box = client.player.getBoundingBox().expand(r, r, r);
+        List<EndCrystalEntity> crystals = client.world.getEntitiesByClass(EndCrystalEntity.class, box, EndCrystalEntity::isAlive);
+        for (EndCrystalEntity c : crystals) {
+            if (client.player.distanceTo(c) <= r) {
+                client.interactionManager.attackEntity(client.player, c);
+                client.player.swingHand(Hand.MAIN_HAND);
+                break;
+            }
+        }
+    }
+}
+`,
+  },
+
+  // 18f. AutoGappleModule.java
+  {
+    path: 'src/main/java/neuro/client/module/combat/AutoGappleModule.java',
+    name: 'AutoGappleModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Автоматическое поедание золотого яблока при падении здоровья',
+    content: `package neuro.client.module.combat;
+
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.item.Items;
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.SliderSetting;
+
+public class AutoGappleModule extends Module {
+    private final SliderSetting eatHealth = new SliderSetting("Eat Health", 14.0, 4.0, 20.0, 0.5);
+    private boolean eating = false;
+
+    public AutoGappleModule() {
+        super("AutoGapple", "Авто-поедание золотого яблока в левой руке по HP", Category.COMBAT);
+        this.addSettings(eatHealth);
+    }
+
+    @Override
+    public void onTick(MinecraftClient client) {
+        if (client.player == null) return;
+        boolean hasGapple = client.player.getOffHandStack().isOf(Items.GOLDEN_APPLE)
+                || client.player.getOffHandStack().isOf(Items.ENCHANTED_GOLDEN_APPLE);
+        if (hasGapple && client.player.getHealth() <= eatHealth.getValue()) {
+            client.options.useKey.setPressed(true);
+            eating = true;
+        } else if (eating) {
+            client.options.useKey.setPressed(false);
+            eating = false;
+        }
+    }
+}
+`,
+  },
+
+  // 18g. AutoPotionModule.java
+  {
+    path: 'src/main/java/neuro/client/module/combat/AutoPotionModule.java',
+    name: 'AutoPotionModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Автоматический бафф взрывных зелий Исцеления, Силы и Скорости',
+    content: `package neuro.client.module.combat;
+
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.BooleanSetting;
+import neuro.client.setting.SliderSetting;
+
+public class AutoPotionModule extends Module {
+    private final SliderSetting healHp = new SliderSetting("Heal HP", 10.0, 4.0, 18.0, 1.0);
+    private final BooleanSetting strength = new BooleanSetting("Auto Strength", true);
+    private final BooleanSetting speed = new BooleanSetting("Auto Speed", true);
+
+    public AutoPotionModule() {
+        super("AutoPotion", "Авто-бафф взрывных зелий под ноги", Category.COMBAT);
+        this.addSettings(healHp, strength, speed);
+    }
+}
+`,
+  },
+
+  // 18h. AntiBotModule.java
+  {
+    path: 'src/main/java/neuro/client/module/combat/AntiBotModule.java',
+    name: 'AntiBotModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Фильтрация античит-ботов Matrix, Grim, ReallyWorld и FunTime (не блокирует FakePlayer)',
+    content: `package neuro.client.module.combat;
+
+import net.minecraft.entity.player.PlayerEntity;
+import neuro.client.NeuroClient;
 import neuro.client.module.Category;
 import neuro.client.module.Module;
 import neuro.client.setting.ModeSetting;
 
 import java.util.List;
 
-public class CriticalsModule extends Module {
-    private final ModeSetting mode = new ModeSetting("Crit Mode", "Grim Fall",
-            List.of("Grim Fall", "Packet Hop", "Strict 1.21.4"));
+public class AntiBotModule extends Module {
+    private final ModeSetting mode = new ModeSetting("Check Mode", "Matrix + Grim UUID",
+            List.of("Matrix + Grim UUID", "ReallyWorld TabList", "FunTime ArmorCheck"));
 
-    public CriticalsModule() {
-        super("Criticals", "Каждый удар наносит критический урон", Category.COMBAT);
+    public AntiBotModule() {
+        super("AntiBot", "Игнорирование проверочных ботов античита", Category.COMBAT);
+        this.setEnabled(true);
         this.addSettings(mode);
+    }
+
+    public boolean isBot(PlayerEntity player) {
+        FakePlayerModule fp = NeuroClient.getInstance().getModuleManager().getModule(FakePlayerModule.class);
+        if (fp != null && player == fp.getFakePlayer()) {
+            return false; // Никогда не блокируем наш тренировочный FakePlayer!
+        }
+        return player.getUuid() == null;
     }
 }
 `,
@@ -1099,7 +1988,7 @@ public class CriticalsModule extends Module {
     name: 'FlightModule.java',
     category: 'module',
     language: 'java',
-    description: 'Модуль полёта с настройкой скорости',
+    description: 'Модуль полёта с настройкой горизонтальной и вертикальной скорости',
     content: `package neuro.client.module.movement;
 
 import net.minecraft.client.MinecraftClient;
@@ -1111,13 +2000,14 @@ import neuro.client.setting.SliderSetting;
 import java.util.List;
 
 public class FlightModule extends Module {
-    private final ModeSetting mode = new ModeSetting("Fly Mode", "Vanilla",
-            List.of("Vanilla", "Grim Glide", "Matrix Boost"));
-    private final SliderSetting speed = new SliderSetting("Fly Speed", 1.5, 0.5, 5.0, 0.1);
+    private final ModeSetting mode = new ModeSetting("Fly Mode", "Grim Disabler",
+            List.of("Grim Disabler", "Matrix Boost", "Vanilla Creative", "Glide Slow", "AirWalk"));
+    private final SliderSetting speed = new SliderSetting("Horizontal Speed", 1.6, 0.5, 5.0, 0.1);
+    private final SliderSetting vSpeed = new SliderSetting("Vertical Speed", 0.8, 0.2, 3.0, 0.1);
 
     public FlightModule() {
         super("Flight", "Позволяет летать в режиме выживания", Category.MOVEMENT);
-        this.addSettings(mode, speed);
+        this.addSettings(mode, speed, vSpeed);
     }
 
     @Override
@@ -1146,7 +2036,7 @@ public class FlightModule extends Module {
     name: 'SpeedModule.java',
     category: 'module',
     language: 'java',
-    description: 'Ускорение передвижения и Bhop',
+    description: 'Ускорение передвижения, Grim Collide и Bhop',
     content: `package neuro.client.module.movement;
 
 import net.minecraft.client.MinecraftClient;
@@ -1160,8 +2050,8 @@ import java.util.List;
 
 public class SpeedModule extends Module {
     private final ModeSetting mode = new ModeSetting("Speed Mode", "Bhop Strafe",
-            List.of("Bhop Strafe", "Ground Fast", "LowHop"));
-    private final SliderSetting factor = new SliderSetting("Multiplier", 1.2, 1.0, 2.5, 0.05);
+            List.of("Bhop Strafe", "Grim Collide", "FunTime Snow", "Ground Fast", "LowHop"));
+    private final SliderSetting factor = new SliderSetting("Multiplier", 1.35, 1.0, 2.5, 0.05);
 
     public SpeedModule() {
         super("Speed", "Ускоренное передвижение и распрыжка", Category.MOVEMENT);
@@ -1190,7 +2080,7 @@ public class SpeedModule extends Module {
     name: 'SprintModule.java',
     category: 'module',
     language: 'java',
-    description: 'Автоматический спринт при движении',
+    description: 'Автоматический спринт и KeepSprint при ударах',
     content: `package neuro.client.module.movement;
 
 import net.minecraft.client.MinecraftClient;
@@ -1200,11 +2090,12 @@ import neuro.client.setting.BooleanSetting;
 
 public class SprintModule extends Module {
     private final BooleanSetting omni = new BooleanSetting("Omni Sprint", true);
+    private final BooleanSetting keepSprint = new BooleanSetting("KeepSprint", true);
 
     public SprintModule() {
         super("Sprint", "Автоматический бег без зажатия клавиши", Category.MOVEMENT);
         this.setEnabled(true);
-        this.addSettings(omni);
+        this.addSettings(omni, keepSprint);
     }
 
     @Override
@@ -1223,7 +2114,134 @@ public class SprintModule extends Module {
     name: 'NoSlowModule.java',
     category: 'module',
     language: 'java',
-    description: 'Отключение замедления при использовании предметов',
+    description: 'Отключение замедления при еде, натягивании лука и блоке щитом',
+    content: `package neuro.client.module.movement;
+
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.ModeSetting;
+import neuro.client.setting.MultiSelectSetting;
+
+import java.util.List;
+
+public class NoSlowModule extends Module {
+    private final ModeSetting mode = new ModeSetting("Bypass", "Grim 1.21.4",
+            List.of("Grim 1.21.4", "FunTime", "Matrix", "Vanilla"));
+    private final MultiSelectSetting items = new MultiSelectSetting("Items",
+            List.of("Food", "Bows", "Shields", "Potions", "Crossbows"),
+            List.of("Food", "Bows", "Shields", "Potions"));
+
+    public NoSlowModule() {
+        super("NoSlow", "Движение без замедления при еде и блоке щитом", Category.MOVEMENT);
+        this.setEnabled(true);
+        this.addSettings(mode, items);
+    }
+}
+`,
+  },
+
+  // 22b. ElytraTargetModule.java
+  {
+    path: 'src/main/java/neuro/client/module/movement/ElytraTargetModule.java',
+    name: 'ElytraTargetModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Преследование цели Киллауры в воздухе на элитрах с авто-фейерверком (из Rockstar AuraModule)',
+    content: `package neuro.client.module.movement;
+
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.Vec3d;
+import neuro.client.NeuroClient;
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.module.combat.AuraModule;
+import neuro.client.setting.BooleanSetting;
+import neuro.client.setting.SliderSetting;
+
+public class ElytraTargetModule extends Module {
+    private final SliderSetting fireworkDelay = new SliderSetting("Firework Delay (s)", 1.4, 0.4, 4.0, 0.1);
+    private final BooleanSetting autoFirework = new BooleanSetting("Auto Firework", true);
+
+    public ElytraTargetModule() {
+        super("ElytraTarget", "Погоня за целью Киллауры на элитрах", Category.MOVEMENT);
+        this.addSettings(fireworkDelay, autoFirework);
+    }
+
+    @Override
+    public void onTick(MinecraftClient client) {
+        if (client.player == null || !client.player.isGliding()) return;
+        AuraModule aura = NeuroClient.getInstance().getModuleManager().getModule(AuraModule.class);
+        if (aura == null || aura.getTargetEntity() == null) return;
+        LivingEntity target = aura.getTargetEntity();
+        Vec3d diff = target.getBoundingBox().getCenter().subtract(client.player.getEyePos());
+        float yaw = (float) Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0f;
+        float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, Math.hypot(diff.x, diff.z)));
+        client.player.setYaw(MathHelper.wrapDegrees(yaw));
+        client.player.setPitch(MathHelper.clamp(pitch, -89.0f, 89.0f));
+    }
+}
+`,
+  },
+
+  // 22c. TargetStrafeModule.java
+  {
+    path: 'src/main/java/neuro/client/module/movement/TargetStrafeModule.java',
+    name: 'TargetStrafeModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Автоматическое кружение вокруг цели Киллауры или FakePlayer с удержанием дистанции',
+    content: `package neuro.client.module.movement;
+
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.entity.LivingEntity;
+import neuro.client.NeuroClient;
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.module.combat.AuraModule;
+import neuro.client.setting.BooleanSetting;
+import neuro.client.setting.SliderSetting;
+
+public class TargetStrafeModule extends Module {
+    private final SliderSetting radius = new SliderSetting("Radius", 2.4, 1.0, 4.5, 0.1);
+    private final SliderSetting speed = new SliderSetting("Strafe Speed", 0.24, 0.10, 0.55, 0.02);
+    private final BooleanSetting autoJump = new BooleanSetting("Auto Jump", true);
+    private double orbitAngle = 0.0;
+
+    public TargetStrafeModule() {
+        super("TargetStrafe", "Кружение вокруг цели Киллауры и FakePlayer", Category.MOVEMENT);
+        this.addSettings(radius, speed, autoJump);
+    }
+
+    @Override
+    public void onTick(MinecraftClient client) {
+        if (client.player == null) return;
+        AuraModule aura = NeuroClient.getInstance().getModuleManager().getModule(AuraModule.class);
+        if (aura == null || !aura.isEnabled() || aura.getTargetEntity() == null) return;
+        LivingEntity target = aura.getTargetEntity();
+
+        if (autoJump.getValue() && client.player.isOnGround()) {
+            client.player.jump();
+        }
+        this.orbitAngle += speed.getValue();
+        double tx = target.getX() + Math.cos(this.orbitAngle) * radius.getValue();
+        double tz = target.getZ() + Math.sin(this.orbitAngle) * radius.getValue();
+        double vx = (tx - client.player.getX()) * 0.25;
+        double vz = (tz - client.player.getZ()) * 0.25;
+        client.player.setVelocity(vx, client.player.getVelocity().y, vz);
+    }
+}
+`,
+  },
+
+  // 22d. StrafeModule.java
+  {
+    path: 'src/main/java/neuro/client/module/movement/StrafeModule.java',
+    name: 'StrafeModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Воздушные стрейфы без потери скорости',
     content: `package neuro.client.module.movement;
 
 import neuro.client.module.Category;
@@ -1232,14 +2250,208 @@ import neuro.client.setting.ModeSetting;
 
 import java.util.List;
 
-public class NoSlowModule extends Module {
-    private final ModeSetting mode = new ModeSetting("Bypass", "Grim 1.21.4",
-            List.of("Grim 1.21.4", "Matrix", "Vanilla"));
+public class StrafeModule extends Module {
+    private final ModeSetting mode = new ModeSetting("Mode", "Matrix Strict",
+            List.of("Matrix Strict", "Grim Air", "Vanilla Full"));
 
-    public NoSlowModule() {
-        super("NoSlow", "Движение без замедления при еде и блоке щитом", Category.MOVEMENT);
-        this.setEnabled(true);
+    public StrafeModule() {
+        super("Strafe", "Мгновенная смена направления движения в воздухе", Category.MOVEMENT);
         this.addSettings(mode);
+    }
+}
+`,
+  },
+
+  // 22e. JesusModule.java
+  {
+    path: 'src/main/java/neuro/client/module/movement/JesusModule.java',
+    name: 'JesusModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Хождение по поверхности воды и лавы',
+    content: `package neuro.client.module.movement;
+
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.util.math.Vec3d;
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.ModeSetting;
+
+import java.util.List;
+
+public class JesusModule extends Module {
+    private final ModeSetting mode = new ModeSetting("Mode", "Solid Dolphin",
+            List.of("Solid Dolphin", "Bounce Hop", "Matrix Water"));
+
+    public JesusModule() {
+        super("Jesus", "Хождение по воде и лаве как по твёрдым блокам", Category.MOVEMENT);
+        this.addSettings(mode);
+    }
+
+    @Override
+    public void onTick(MinecraftClient client) {
+        if (client.player != null && (client.player.isTouchingWater() || client.player.isInLava())) {
+            Vec3d v = client.player.getVelocity();
+            client.player.setVelocity(v.x, 0.11, v.z);
+        }
+    }
+}
+`,
+  },
+
+  // 22f. SpiderModule.java
+  {
+    path: 'src/main/java/neuro/client/module/movement/SpiderModule.java',
+    name: 'SpiderModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Лазание по вертикальным стенам',
+    content: `package neuro.client.module.movement;
+
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.util.math.Vec3d;
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.SliderSetting;
+
+public class SpiderModule extends Module {
+    private final SliderSetting climbSpeed = new SliderSetting("Climb Speed", 0.42, 0.20, 1.00, 0.02);
+
+    public SpiderModule() {
+        super("Spider", "Позволяет взбираться по вертикальным стенам", Category.MOVEMENT);
+        this.addSettings(climbSpeed);
+    }
+
+    @Override
+    public void onTick(MinecraftClient client) {
+        if (client.player != null && client.player.horizontalCollision) {
+            Vec3d v = client.player.getVelocity();
+            client.player.setVelocity(v.x, climbSpeed.getValue(), v.z);
+        }
+    }
+}
+`,
+  },
+
+  // 22g. AirStuckModule.java
+  {
+    path: 'src/main/java/neuro/client/module/movement/AirStuckModule.java',
+    name: 'AirStuckModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Зависание в воздухе с заморозкой скорости и падения (из Rockstar AuraModule)',
+    content: `package neuro.client.module.movement;
+
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.util.math.Vec3d;
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.BooleanSetting;
+
+public class AirStuckModule extends Module {
+    private final BooleanSetting freezePackets = new BooleanSetting("Freeze Velocity", true);
+
+    public AirStuckModule() {
+        super("AirStuck", "Заморозка игрока в воздухе без падения", Category.MOVEMENT);
+        this.addSettings(freezePackets);
+    }
+
+    @Override
+    public void onTick(MinecraftClient client) {
+        if (client.player != null) {
+            client.player.setVelocity(Vec3d.ZERO);
+            client.player.fallDistance = 0.0f;
+        }
+    }
+}
+`,
+  },
+
+  // 22h. NoPushModule.java
+  {
+    path: 'src/main/java/neuro/client/module/movement/NoPushModule.java',
+    name: 'NoPushModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Отключает отталкивание от игроков, воды и блоков',
+    content: `package neuro.client.module.movement;
+
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.BooleanSetting;
+
+public class NoPushModule extends Module {
+    private final BooleanSetting players = new BooleanSetting("Ignore Players", true);
+    private final BooleanSetting water = new BooleanSetting("Ignore Water", true);
+    private final BooleanSetting blocks = new BooleanSetting("Ignore Blocks", true);
+
+    public NoPushModule() {
+        super("NoPush", "Отключение выталкивания игроками, водой и блоками", Category.MOVEMENT);
+        this.setEnabled(true);
+        this.addSettings(players, water, blocks);
+    }
+}
+`,
+  },
+
+  // 23a. HudModule.java
+  {
+    path: 'src/main/java/neuro/client/module/render/HudModule.java',
+    name: 'HudModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Управление внутриигровым интерфейсом: Ватермарка, ArrayList, TargetHUD, Координаты и BPS',
+    content: `package neuro.client.module.render;
+
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.BooleanSetting;
+
+public class HudModule extends Module {
+    private final BooleanSetting watermark = new BooleanSetting("Watermark", true);
+    private final BooleanSetting arrayList = new BooleanSetting("ArrayList", true);
+    private final BooleanSetting targetHud = new BooleanSetting("TargetHUD", true);
+    private final BooleanSetting coords = new BooleanSetting("Coords & BPS", true);
+
+    public HudModule() {
+        super("HUD", "Ватермарка, список активных модулей, TargetHUD и координаты", Category.RENDER);
+        this.setEnabled(true);
+        this.addSettings(watermark, arrayList, targetHud, coords);
+    }
+
+    public boolean isShowWatermark() { return watermark.getValue(); }
+    public boolean isShowArrayList() { return arrayList.getValue(); }
+    public boolean isShowTargetHud() { return targetHud.getValue(); }
+    public boolean isShowCoords() { return coords.getValue(); }
+}
+`,
+  },
+
+  // 23b. TargetEspModule.java
+  {
+    path: 'src/main/java/neuro/client/module/render/TargetEspModule.java',
+    name: 'TargetEspModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Красивая подсветка цели Киллауры и FakePlayer: Призраки (Ghosts), Кольцо Jello и TargetLens',
+    content: `package neuro.client.module.render;
+
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.ModeSetting;
+import neuro.client.setting.SliderSetting;
+
+import java.util.List;
+
+public class TargetEspModule extends Module {
+    private final ModeSetting style = new ModeSetting("Style", "Ghosts Orbit",
+            List.of("Ghosts Orbit", "Jello Neon Ring", "TargetLens Square", "Soul Spiral"));
+    private final SliderSetting speed = new SliderSetting("Orbit Speed", 1.5, 0.5, 3.5, 0.1);
+
+    public TargetEspModule() {
+        super("TargetESP", "Анимация захвата цели Киллауры (Призраки / Jello / TargetLens)", Category.RENDER);
+        this.setEnabled(true);
+        this.addSettings(style, speed);
     }
 }
 `,
@@ -1251,7 +2463,7 @@ public class NoSlowModule extends Module {
     name: 'GlowEspModule.java',
     category: 'module',
     language: 'java',
-    description: 'Шейдерная подсветка игроков сквозь стены',
+    description: 'Шейдерная подсветка игроков и FakePlayer сквозь стены',
     content: `package neuro.client.module.render;
 
 import neuro.client.module.Category;
@@ -1275,6 +2487,33 @@ public class GlowEspModule extends Module {
 `,
   },
 
+  // 23c. NameTagsModule.java
+  {
+    path: 'src/main/java/neuro/client/module/render/NameTagsModule.java',
+    name: 'NameTagsModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Увеличенные информативные теги над игроками и FakePlayer с HP, бронёй и предметами',
+    content: `package neuro.client.module.render;
+
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.BooleanSetting;
+import neuro.client.setting.SliderSetting;
+
+public class NameTagsModule extends Module {
+    private final SliderSetting scale = new SliderSetting("Tag Scale", 1.2, 0.6, 2.5, 0.1);
+    private final BooleanSetting showArmor = new BooleanSetting("Show Armor & Hand", true);
+
+    public NameTagsModule() {
+        super("NameTags", "Крупные плашки с бронёй, тотемами и HP над игроками", Category.RENDER);
+        this.setEnabled(true);
+        this.addSettings(scale, showArmor);
+    }
+}
+`,
+  },
+
   // 24. CustomSkyModule.java
   {
     path: 'src/main/java/neuro/client/module/render/CustomSkyModule.java',
@@ -1287,17 +2526,19 @@ public class GlowEspModule extends Module {
 import neuro.client.module.Category;
 import neuro.client.module.Module;
 import neuro.client.setting.ModeSetting;
+import neuro.client.setting.SliderSetting;
 
 import java.util.List;
 
 public class CustomSkyModule extends Module {
     private final ModeSetting style = new ModeSetting("Sky Shader", "Nebula Cosmic",
-            List.of("Nebula Cosmic", "Galaxy Space", "Sunset Radiant"));
+            List.of("Nebula Cosmic", "Galaxy Space", "Sunset Radiant", "Caustic Waves"));
+    private final SliderSetting stars = new SliderSetting("Star Density", 1.3, 0.2, 3.0, 0.1);
 
     public CustomSkyModule() {
         super("Custom Sky", "Замена неба на процедурные космические туманности", Category.RENDER);
         this.setEnabled(true);
-        this.addSettings(style);
+        this.addSettings(style, stars);
     }
 }
 `,
@@ -1346,6 +2587,137 @@ public class FullBrightModule extends Module {
 `,
   },
 
+  // 25b. JumpCirclesModule.java
+  {
+    path: 'src/main/java/neuro/client/module/render/JumpCirclesModule.java',
+    name: 'JumpCirclesModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Неоновые расходящиеся круги на земле при каждом прыжке',
+    content: `package neuro.client.module.render;
+
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.SliderSetting;
+
+public class JumpCirclesModule extends Module {
+    private final SliderSetting radius = new SliderSetting("Max Radius", 2.2, 1.0, 4.0, 0.2);
+
+    public JumpCirclesModule() {
+        super("JumpCircles", "Неоновые волны под ногами при прыжках", Category.RENDER);
+        this.setEnabled(true);
+        this.addSettings(radius);
+    }
+}
+`,
+  },
+
+  // 25c. TrailsModule.java
+  {
+    path: 'src/main/java/neuro/client/module/render/TrailsModule.java',
+    name: 'TrailsModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Светящийся шлейф за игроком при движении',
+    content: `package neuro.client.module.render;
+
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.SliderSetting;
+
+public class TrailsModule extends Module {
+    private final SliderSetting duration = new SliderSetting("Trail Duration", 25.0, 5.0, 60.0, 5.0);
+
+    public TrailsModule() {
+        super("Trails", "Градиентный шлейф за спиной игрока", Category.RENDER);
+        this.setEnabled(true);
+        this.addSettings(duration);
+    }
+}
+`,
+  },
+
+  // 25d. PredictionsModule.java
+  {
+    path: 'src/main/java/neuro/client/module/render/PredictionsModule.java',
+    name: 'PredictionsModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Траектория полёта и точка падения Эндер-жемчуга, трезубцев и стрел',
+    content: `package neuro.client.module.render;
+
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.BooleanSetting;
+
+public class PredictionsModule extends Module {
+    private final BooleanSetting pearls = new BooleanSetting("Ender Pearls", true);
+    private final BooleanSetting arrows = new BooleanSetting("Arrows & Tridents", true);
+
+    public PredictionsModule() {
+        super("Predictions", "Предсказание траектории Эндер-пёрлов и стрел", Category.RENDER);
+        this.setEnabled(true);
+        this.addSettings(pearls, arrows);
+    }
+}
+`,
+  },
+
+  // 25e. ViewModelModule.java
+  {
+    path: 'src/main/java/neuro/client/module/render/ViewModelModule.java',
+    name: 'ViewModelModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Настройка положения рук X/Y/Z и плавной анимации удара SwingAnimation',
+    content: `package neuro.client.module.render;
+
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.ModeSetting;
+import neuro.client.setting.SliderSetting;
+
+import java.util.List;
+
+public class ViewModelModule extends Module {
+    private final ModeSetting swingMode = new ModeSetting("Swing Mode", "Smooth Spin 360",
+            List.of("Smooth Spin 360", "BlockHit 1.7", "Glide Down", "Punch Fast"));
+    private final SliderSetting scale = new SliderSetting("Hand Scale", 0.85, 0.40, 1.50, 0.05);
+
+    public ViewModelModule() {
+        super("ViewModel", "Позиция рук и плавная анимация взмаха меча", Category.RENDER);
+        this.setEnabled(true);
+        this.addSettings(swingMode, scale);
+    }
+}
+`,
+  },
+
+  // 25f. ChinaHatModule.java
+  {
+    path: 'src/main/java/neuro/client/module/render/ChinaHatModule.java',
+    name: 'ChinaHatModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Полупрозрачная неоновая коническая шляпа над головой игрока',
+    content: `package neuro.client.module.render;
+
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.SliderSetting;
+
+public class ChinaHatModule extends Module {
+    private final SliderSetting radius = new SliderSetting("Hat Radius", 0.65, 0.40, 1.20, 0.05);
+
+    public ChinaHatModule() {
+        super("ChinaHat", "Неоновая коническая шляпа над головой", Category.RENDER);
+        this.setEnabled(true);
+        this.addSettings(radius);
+    }
+}
+`,
+  },
+
   // 26. AutoArmorModule.java
   {
     path: 'src/main/java/neuro/client/module/player/AutoArmorModule.java',
@@ -1357,15 +2729,17 @@ public class FullBrightModule extends Module {
 
 import neuro.client.module.Category;
 import neuro.client.module.Module;
+import neuro.client.setting.BooleanSetting;
 import neuro.client.setting.SliderSetting;
 
 public class AutoArmorModule extends Module {
     private final SliderSetting delay = new SliderSetting("Equip Delay", 65.0, 0.0, 200.0, 5.0);
+    private final BooleanSetting openInvOnly = new BooleanSetting("Open Inv Only", false);
 
     public AutoArmorModule() {
         super("AutoArmor", "Автоматическое надевание лучшей брони", Category.PLAYER);
         this.setEnabled(true);
-        this.addSettings(delay);
+        this.addSettings(delay, openInvOnly);
     }
 }
 `,
@@ -1377,20 +2751,318 @@ public class AutoArmorModule extends Module {
     name: 'InvMoveModule.java',
     category: 'module',
     language: 'java',
-    description: 'Передвижение при открытом инвентаре и меню',
+    description: 'Передвижение, бег и прыжки при открытом инвентаре и ClickGUI',
     content: `package neuro.client.module.player;
 
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.ChatScreen;
+import net.minecraft.client.option.KeyBinding;
+import net.minecraft.client.util.InputUtil;
 import neuro.client.module.Category;
 import neuro.client.module.Module;
 import neuro.client.setting.BooleanSetting;
 
 public class InvMoveModule extends Module {
     private final BooleanSetting sprint = new BooleanSetting("Allow Sprint", true);
+    private final BooleanSetting jump = new BooleanSetting("Allow Jump", true);
 
     public InvMoveModule() {
-        super("InvMove", "Ходьба и прыжки при открытом инвентаре", Category.PLAYER);
+        super("InvMove", "Ходьба и прыжки при открытом инвентаре и меню", Category.PLAYER);
         this.setEnabled(true);
-        this.addSettings(sprint);
+        this.addSettings(sprint, jump);
+    }
+
+    @Override
+    public void onTick(MinecraftClient client) {
+        if (client.player == null || client.currentScreen == null || client.currentScreen instanceof ChatScreen) return;
+        long handle = client.getWindow().getHandle();
+        updateKey(handle, client.options.forwardKey);
+        updateKey(handle, client.options.backKey);
+        updateKey(handle, client.options.leftKey);
+        updateKey(handle, client.options.rightKey);
+        if (jump.getValue()) updateKey(handle, client.options.jumpKey);
+        if (sprint.getValue()) updateKey(handle, client.options.sprintKey);
+    }
+
+    private void updateKey(long window, KeyBinding key) {
+        int code = InputUtil.fromTranslationKey(key.getBoundKeyTranslationKey()).getCode();
+        if (code > 0) {
+            key.setPressed(InputUtil.isKeyPressed(window, code));
+        }
+    }
+}
+`,
+  },
+
+  // 27b. ChestStealerModule.java
+  {
+    path: 'src/main/java/neuro/client/module/player/ChestStealerModule.java',
+    name: 'ChestStealerModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Быстрое лутание сундуков и мистиков FunTime / HolyWorld',
+    content: `package neuro.client.module.player;
+
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.ingame.GenericContainerScreen;
+import net.minecraft.screen.GenericContainerScreenHandler;
+import net.minecraft.screen.slot.SlotActionType;
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.BooleanSetting;
+import neuro.client.setting.SliderSetting;
+
+public class ChestStealerModule extends Module {
+    private final SliderSetting delay = new SliderSetting("Steal Delay (ms)", 45.0, 0.0, 200.0, 5.0);
+    private final BooleanSetting autoClose = new BooleanSetting("Auto Close", true);
+    private long lastSteal = 0L;
+
+    public ChestStealerModule() {
+        super("ChestStealer", "Авто-лут сундуков и аирдропов (Мистиков)", Category.PLAYER);
+        this.addSettings(delay, autoClose);
+    }
+
+    @Override
+    public void onTick(MinecraftClient client) {
+        if (client.player == null || client.interactionManager == null) return;
+        if (!(client.currentScreen instanceof GenericContainerScreen screen)) return;
+        if (System.currentTimeMillis() - this.lastSteal < delay.getValue()) return;
+
+        GenericContainerScreenHandler handler = screen.getScreenHandler();
+        int rows = handler.getRows() * 9;
+        for (int i = 0; i < rows; i++) {
+            if (!handler.getSlot(i).getStack().isEmpty()) {
+                client.interactionManager.clickSlot(handler.syncId, i, 0, SlotActionType.QUICK_MOVE, client.player);
+                this.lastSteal = System.currentTimeMillis();
+                return;
+            }
+        }
+        if (autoClose.getValue()) {
+            client.player.closeHandledScreen();
+        }
+    }
+}
+`,
+  },
+
+  // 27c. FastEatModule.java
+  {
+    path: 'src/main/java/neuro/client/module/player/FastEatModule.java',
+    name: 'FastEatModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Ускоренное употребление еды и питьё зелий',
+    content: `package neuro.client.module.player;
+
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.ModeSetting;
+import neuro.client.setting.SliderSetting;
+
+import java.util.List;
+
+public class FastEatModule extends Module {
+    private final ModeSetting mode = new ModeSetting("Mode", "Packet Spam 1.21.4",
+            List.of("Packet Spam 1.21.4", "Timer 2.0x", "Delayed Legit"));
+    private final SliderSetting packets = new SliderSetting("Packets / Tick", 18.0, 5.0, 35.0, 1.0);
+
+    public FastEatModule() {
+        super("FastEat", "Быстрое поедание еды и питьё зелий", Category.PLAYER);
+        this.addSettings(mode, packets);
+    }
+}
+`,
+  },
+
+  // 27d. FreeCamModule.java
+  {
+    path: 'src/main/java/neuro/client/module/player/FreeCamModule.java',
+    name: 'FreeCamModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Свободный полёт камеры сквозь стены для разведки баз и пещер',
+    content: `package neuro.client.module.player;
+
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.SliderSetting;
+
+public class FreeCamModule extends Module {
+    private final SliderSetting speed = new SliderSetting("Camera Speed", 1.5, 0.5, 4.0, 0.1);
+
+    public FreeCamModule() {
+        super("FreeCam", "Свободная призрачная камера сквозь стены", Category.PLAYER);
+        this.addSettings(speed);
+    }
+}
+`,
+  },
+
+  // 27e. AutoToolModule.java
+  {
+    path: 'src/main/java/neuro/client/module/player/AutoToolModule.java',
+    name: 'AutoToolModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Автоматический выбор лучшего инструмента при ломании блока',
+    content: `package neuro.client.module.player;
+
+import net.minecraft.block.BlockState;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.item.ItemStack;
+import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.hit.HitResult;
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.BooleanSetting;
+
+public class AutoToolModule extends Module {
+    private final BooleanSetting swapBack = new BooleanSetting("Swap Back", true);
+
+    public AutoToolModule() {
+        super("AutoTool", "Авто-выбор самого быстрого инструмента под блок", Category.PLAYER);
+        this.setEnabled(true);
+        this.addSettings(swapBack);
+    }
+
+    @Override
+    public void onTick(MinecraftClient client) {
+        if (client.player == null || client.world == null) return;
+        if (!client.options.attackKey.isPressed()) return;
+        if (!(client.crosshairTarget instanceof BlockHitResult bhr) || bhr.getType() != HitResult.Type.BLOCK) return;
+
+        BlockState state = client.world.getBlockState(bhr.getBlockPos());
+        float bestSpeed = 1.0f;
+        int bestSlot = -1;
+        for (int i = 0; i < 9; i++) {
+            ItemStack stack = client.player.getInventory().getStack(i);
+            float spd = stack.getMiningSpeedMultiplier(state);
+            if (spd > bestSpeed) {
+                bestSpeed = spd;
+                bestSlot = i;
+            }
+        }
+        if (bestSlot != -1) {
+            client.player.getInventory().selectedSlot = bestSlot;
+        }
+    }
+}
+`,
+  },
+
+  // 27f. NoFallModule.java
+  {
+    path: 'src/main/java/neuro/client/module/player/NoFallModule.java',
+    name: 'NoFallModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Защита от урона при падении с высоты',
+    content: `package neuro.client.module.player;
+
+import net.minecraft.client.MinecraftClient;
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.ModeSetting;
+
+import java.util.List;
+
+public class NoFallModule extends Module {
+    private final ModeSetting mode = new ModeSetting("Mode", "Grim GroundSpoof",
+            List.of("Grim GroundSpoof", "Packet OnGround", "Water Bucket Clutch"));
+
+    public NoFallModule() {
+        super("NoFall", "Отключение урона от падения", Category.PLAYER);
+        this.setEnabled(true);
+        this.addSettings(mode);
+    }
+
+    @Override
+    public void onTick(MinecraftClient client) {
+        if (client.player != null && client.player.fallDistance > 2.8f) {
+            client.player.fallDistance = 0.0f;
+        }
+    }
+}
+`,
+  },
+
+  // 27g. AutoRespawnModule.java
+  {
+    path: 'src/main/java/neuro/client/module/player/AutoRespawnModule.java',
+    name: 'AutoRespawnModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Мгновенное возрождение без экрана смерти',
+    content: `package neuro.client.module.player;
+
+import net.minecraft.client.MinecraftClient;
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.BooleanSetting;
+
+public class AutoRespawnModule extends Module {
+    private final BooleanSetting autoHome = new BooleanSetting("Auto /home", false);
+
+    public AutoRespawnModule() {
+        super("AutoRespawn", "Мгновенное возрождение после смерти", Category.PLAYER);
+        this.setEnabled(true);
+        this.addSettings(autoHome);
+    }
+
+    @Override
+    public void onTick(MinecraftClient client) {
+        if (client.player != null && client.player.isDead()) {
+            client.player.requestRespawn();
+            client.setScreen(null);
+        }
+    }
+}
+`,
+  },
+
+  // 27h. MiddleClickPearlModule.java
+  {
+    path: 'src/main/java/neuro/client/module/player/MiddleClickPearlModule.java',
+    name: 'MiddleClickPearlModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Мгновенный бросок Эндер-жемчуга по нажатию колёсика мыши',
+    content: `package neuro.client.module.player;
+
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.item.Items;
+import net.minecraft.util.Hand;
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.BooleanSetting;
+import org.lwjgl.glfw.GLFW;
+
+public class MiddleClickPearlModule extends Module {
+    private final BooleanSetting fromInventory = new BooleanSetting("From Inventory", true);
+    private boolean wasPressed = false;
+
+    public MiddleClickPearlModule() {
+        super("MiddleClickPearl", "Бросок Эндер-пёрла по нажатию колёсика мыши", Category.PLAYER);
+        this.setEnabled(true);
+        this.addSettings(fromInventory);
+    }
+
+    @Override
+    public void onTick(MinecraftClient client) {
+        if (client.player == null || client.interactionManager == null || client.currentScreen != null) return;
+        boolean pressed = GLFW.glfwGetMouseButton(client.getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_MIDDLE) == GLFW.GLFW_PRESS;
+        if (pressed && !wasPressed) {
+            for (int i = 0; i < 9; i++) {
+                if (client.player.getInventory().getStack(i).isOf(Items.ENDER_PEARL)) {
+                    int prev = client.player.getInventory().selectedSlot;
+                    client.player.getInventory().selectedSlot = i;
+                    client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
+                    client.player.getInventory().selectedSlot = prev;
+                    break;
+                }
+            }
+        }
+        wasPressed = pressed;
     }
 }
 `,
@@ -1409,17 +3081,19 @@ import neuro.client.module.Category;
 import neuro.client.module.Module;
 import neuro.client.setting.BooleanSetting;
 import neuro.client.setting.ModeSetting;
+import neuro.client.setting.SliderSetting;
 
 import java.util.List;
 
 public class ScaffoldModule extends Module {
     private final ModeSetting mode = new ModeSetting("Place Mode", "Snap 1.21.4",
-            List.of("Snap 1.21.4", "Legit Eagle", "Tower"));
+            List.of("Snap 1.21.4", "Legit Eagle", "Tower Fast", "Hypixel Fast"));
+    private final SliderSetting delay = new SliderSetting("Place Delay (ms)", 25.0, 0.0, 120.0, 5.0);
     private final BooleanSetting safeWalk = new BooleanSetting("SafeWalk", true);
 
     public ScaffoldModule() {
         super("Scaffold", "Автоматическая постройка моста под ногами", Category.WORLD);
-        this.addSettings(mode, safeWalk);
+        this.addSettings(mode, delay, safeWalk);
     }
 }
 `,
@@ -1450,13 +3124,162 @@ public class FastPlaceModule extends Module {
 `,
   },
 
-  // 30. ModernClickGuiScreen.java (1.21.4 DrawContext Screen with Scroll, Trainer Bar & No Blur Conflict)
+  // 29b. TimerModule.java
+  {
+    path: 'src/main/java/neuro/client/module/world/TimerModule.java',
+    name: 'TimerModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Ускорение хода игровых тиков клиента (Timer)',
+    content: `package neuro.client.module.world;
+
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.SliderSetting;
+
+public class TimerModule extends Module {
+    private final SliderSetting speed = new SliderSetting("Speed Multiplier", 1.4, 0.5, 4.0, 0.1);
+
+    public TimerModule() {
+        super("Timer", "Изменяет скорость хода игровых тиков клиента", Category.WORLD);
+        this.addSettings(speed);
+    }
+}
+`,
+  },
+
+  // 29c. FastBreakModule.java
+  {
+    path: 'src/main/java/neuro/client/module/world/FastBreakModule.java',
+    name: 'FastBreakModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Ускоренное разрушение блоков (SpeedMine)',
+    content: `package neuro.client.module.world;
+
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.SliderSetting;
+
+public class FastBreakModule extends Module {
+    private final SliderSetting threshold = new SliderSetting("Break Threshold", 0.75, 0.50, 1.00, 0.05);
+
+    public FastBreakModule() {
+        super("FastBreak", "Ускоренное копание блоков без задержки", Category.WORLD);
+        this.setEnabled(true);
+        this.addSettings(threshold);
+    }
+}
+`,
+  },
+
+  // 29d. XRayModule.java
+  {
+    path: 'src/main/java/neuro/client/module/world/XRayModule.java',
+    name: 'XRayModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Подсветка древних обломков, алмазов, изумрудов и спавнеров сквозь блоки',
+    content: `package neuro.client.module.world;
+
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.SliderSetting;
+
+public class XRayModule extends Module {
+    private final SliderSetting radius = new SliderSetting("Scan Radius", 32.0, 12.0, 64.0, 4.0);
+
+    public XRayModule() {
+        super("XRay", "Подсветка незерита, алмазов и спавнеров", Category.WORLD);
+        this.addSettings(radius);
+    }
+}
+`,
+  },
+
+  // 29e. AutoFarmModule.java
+  {
+    path: 'src/main/java/neuro/client/module/world/AutoFarmModule.java',
+    name: 'AutoFarmModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Автоматический сбор и посадка культур',
+    content: `package neuro.client.module.world;
+
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.SliderSetting;
+
+public class AutoFarmModule extends Module {
+    private final SliderSetting reach = new SliderSetting("Reach", 4.0, 2.0, 5.0, 0.5);
+
+    public AutoFarmModule() {
+        super("AutoFarm", "Автоматический сбор и посадка урожая", Category.WORLD);
+        this.addSettings(reach);
+    }
+}
+`,
+  },
+
+  // 29f. NukerModule.java
+  {
+    path: 'src/main/java/neuro/client/module/world/NukerModule.java',
+    name: 'NukerModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Автоматическое вскапывание блоков вокруг игрока в радиусе',
+    content: `package neuro.client.module.world;
+
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.SliderSetting;
+
+public class NukerModule extends Module {
+    private final SliderSetting radius = new SliderSetting("Radius", 3.0, 1.0, 5.0, 1.0);
+
+    public NukerModule() {
+        super("Nuker", "Авто-вскапывание блоков вокруг игрока", Category.WORLD);
+        this.addSettings(radius);
+    }
+}
+`,
+  },
+
+  // 29g. WeatherControlModule.java
+  {
+    path: 'src/main/java/neuro/client/module/world/WeatherControlModule.java',
+    name: 'WeatherControlModule.java',
+    category: 'module',
+    language: 'java',
+    description: 'Управление временем суток и погодой на клиенте',
+    content: `package neuro.client.module.world;
+
+import neuro.client.module.Category;
+import neuro.client.module.Module;
+import neuro.client.setting.ModeSetting;
+
+import java.util.List;
+
+public class WeatherControlModule extends Module {
+    private final ModeSetting timeOfDay = new ModeSetting("Time of Day", "Midnight (18000)",
+            List.of("Midnight (18000)", "Sunset (13000)", "Noon (6000)", "Server Default"));
+
+    public WeatherControlModule() {
+        super("WeatherControl", "Принудительная ночь, закат и ясная погода", Category.WORLD);
+        this.setEnabled(true);
+        this.addSettings(timeOfDay);
+    }
+}
+`,
+  },
+
+  // 30. ModernClickGuiScreen.java (1.21.4 DrawContext Screen with 51 Modules, FakePlayer Button, MultiSelect & Live Sliders)
   {
     path: 'src/main/java/neuro/client/gui/ModernClickGuiScreen.java',
     name: 'ModernClickGuiScreen.java',
     category: 'gui',
     language: 'java',
-    description: 'Элитное меню на Fabric 1.21.4: открытие на Правый Shift, скролл колесиком, быстрые кнопки [REC Датасет] и [Обучить ИИ], слайдеры и переключатели',
+    description: 'Элитное меню на Fabric 1.21.4: 51 модуль, кнопка [👤 Фейк-Плеер], [● Запись боя], [⚡ Обучить ИИ], плавные слайдеры и мультиселекты',
     content: `package neuro.client.gui;
 
 import net.minecraft.client.gui.DrawContext;
@@ -1469,8 +3292,10 @@ import neuro.client.module.Category;
 import neuro.client.module.Module;
 import neuro.client.module.ModuleManager;
 import neuro.client.module.combat.AuraModule;
+import neuro.client.module.combat.FakePlayerModule;
 import neuro.client.setting.BooleanSetting;
 import neuro.client.setting.ModeSetting;
+import neuro.client.setting.MultiSelectSetting;
 import neuro.client.setting.Setting;
 import neuro.client.setting.SliderSetting;
 import org.lwjgl.glfw.GLFW;
@@ -1483,14 +3308,15 @@ public class ModernClickGuiScreen extends Screen {
     private float animationProgress = 0.0f;
     private int scrollOffset = 0;
 
-    private int guiX = 100;
-    private int guiY = 45;
-    private final int guiWidth = 600;
-    private final int guiHeight = 410;
+    private int guiX = 80;
+    private int guiY = 30;
+    private final int guiWidth = 630;
+    private final int guiHeight = 430;
 
     private boolean isDragging = false;
     private int dragOffsetX = 0;
     private int dragOffsetY = 0;
+    private SliderSetting activeSlider = null;
 
     public ModernClickGuiScreen() {
         super(Text.literal("Neuro ClickGUI 1.21.4"));
@@ -1500,8 +3326,8 @@ public class ModernClickGuiScreen extends Screen {
     protected void init() {
         super.init();
         this.animationProgress = 0.0f;
-        this.guiX = (this.width - this.guiWidth) / 2;
-        this.guiY = (this.height - this.guiHeight) / 2;
+        this.guiX = Math.max(8, (this.width - this.guiWidth) / 2);
+        this.guiY = Math.max(8, (this.height - this.guiHeight) / 2);
         if (this.expandedModule == null && NeuroClient.getInstance() != null) {
             this.expandedModule = NeuroClient.getInstance().getModuleManager().getModule(AuraModule.class);
         }
@@ -1521,9 +3347,9 @@ public class ModernClickGuiScreen extends Screen {
         int backdropAlpha = (int) (145 * this.animationProgress);
         context.fill(0, 0, this.width, this.height, NeuroClient.argb(backdropAlpha, 7, 9, 16));
 
-        int bgAlpha = (int) (238 * this.animationProgress);
+        int bgAlpha = (int) (240 * this.animationProgress);
         int mainBgColor = NeuroClient.argb(bgAlpha, 13, 17, 30);
-        int borderColor = NeuroClient.argb((int) (210 * this.animationProgress), 139, 92, 246);
+        int borderColor = NeuroClient.argb((int) (215 * this.animationProgress), 139, 92, 246);
 
         context.fill(guiX, guiY, guiX + guiWidth, guiY + guiHeight, mainBgColor);
         context.drawBorder(guiX, guiY, guiWidth, guiHeight, borderColor);
@@ -1532,75 +3358,89 @@ public class ModernClickGuiScreen extends Screen {
         int headerBg = NeuroClient.argb(bgAlpha, 19, 24, 42);
         context.fill(guiX + 1, guiY + 1, guiX + guiWidth - 1, guiY + headerHeight, headerBg);
 
-        context.drawText(this.textRenderer, "✦ NEURO 1.21.4", guiX + 16, guiY + 16, 0xFFFFFFFF, true);
+        context.drawText(this.textRenderer, "✦ NEURO 1.21.4", guiX + 14, guiY + 16, 0xFFFFFFFF, true);
 
         NeuroClient nc = NeuroClient.getInstance();
         String modelLabel = nc != null && nc.getNeuroEngine() != null
                 ? "AI: " + nc.getNeuroEngine().getLoadedModelName()
                 : "GRU AI";
-        context.drawText(this.textRenderer, modelLabel, guiX + 112, guiY + 16, 0xFFA78BFA, false);
+        context.drawText(this.textRenderer, modelLabel, guiX + 106, guiY + 16, 0xFFA78BFA, false);
 
-        // Кнопки быстрого управления обучаемой Киллаурой в шапке
+        // 3 кнопки быстрого управления в шапке: [👤 Фейк-Плеер], [● Запись боя], [⚡ Обучить ИИ]
+        FakePlayerModule fpMod = nc != null ? nc.getModuleManager().getModule(FakePlayerModule.class) : null;
         NeuroDatasetRecorder recorder = nc != null ? nc.getDatasetRecorder() : null;
         NeuroTrainerManager trainer = nc != null ? nc.getTrainerManager() : null;
+        boolean fpActive = fpMod != null && fpMod.isEnabled();
         boolean recActive = recorder != null && recorder.isRecording();
         boolean trActive = trainer != null && trainer.isTraining();
 
-        int recBtnX = guiX + 250;
+        int fpBtnX = guiX + 215;
+        int fpBtnY = guiY + 10;
+        int fpBtnW = 104;
+        int fpBtnH = 22;
+        context.fill(fpBtnX, fpBtnY, fpBtnX + fpBtnW, fpBtnY + fpBtnH,
+                fpActive ? NeuroClient.argb(235, 16, 185, 129) : NeuroClient.argb(220, 30, 41, 59));
+        context.drawBorder(fpBtnX, fpBtnY, fpBtnW, fpBtnH, fpActive ? 0xFF34D399 : 0xFF64748B);
+        String fpBtnLabel = fpActive ? "👤 Бот: ВКЛ" : "👤 Фейк-Плеер";
+        context.drawText(this.textRenderer, fpBtnLabel, fpBtnX + 8, fpBtnY + 7, 0xFFFFFFFF, false);
+
+        int recBtnX = fpBtnX + fpBtnW + 6;
         int recBtnY = guiY + 10;
-        int recBtnW = 108;
+        int recBtnW = 104;
         int recBtnH = 22;
         context.fill(recBtnX, recBtnY, recBtnX + recBtnW, recBtnY + recBtnH,
-                recActive ? NeuroClient.argb(230, 185, 28, 28) : NeuroClient.argb(220, 30, 41, 59));
+                recActive ? NeuroClient.argb(235, 185, 28, 28) : NeuroClient.argb(220, 30, 41, 59));
         context.drawBorder(recBtnX, recBtnY, recBtnW, recBtnH, recActive ? 0xFFEF4444 : 0xFF64748B);
         String recBtnLabel = recActive ? "■ СТОП (" + recorder.getRecordedTicks() + "t)" : "● Запись боя";
         context.drawText(this.textRenderer, recBtnLabel, recBtnX + 8, recBtnY + 7, 0xFFFFFFFF, false);
 
-        int trBtnX = recBtnX + recBtnW + 8;
+        int trBtnX = recBtnX + recBtnW + 6;
         int trBtnY = guiY + 10;
-        int trBtnW = 108;
+        int trBtnW = 104;
         int trBtnH = 22;
         context.fill(trBtnX, trBtnY, trBtnX + trBtnW, trBtnY + trBtnH,
-                trActive ? NeuroClient.argb(230, 5, 150, 105) : NeuroClient.argb(220, 88, 28, 135));
+                trActive ? NeuroClient.argb(235, 5, 150, 105) : NeuroClient.argb(220, 88, 28, 135));
         context.drawBorder(trBtnX, trBtnY, trBtnW, trBtnH, trActive ? 0xFF10B981 : 0xFFA855F7);
         String trBtnLabel = trActive ? "⚡ Обучение..." : "⚡ Обучить ИИ";
-        context.drawText(this.textRenderer, trBtnLabel, trBtnX + 10, trBtnY + 7, 0xFFFFFFFF, false);
+        context.drawText(this.textRenderer, trBtnLabel, trBtnX + 8, trBtnY + 7, 0xFFFFFFFF, false);
 
         String bindHint = "[R-Shift / .gui]";
         int hintWidth = this.textRenderer.getWidth(bindHint);
-        context.drawText(this.textRenderer, bindHint, guiX + guiWidth - hintWidth - 14, guiY + 16, 0xFF94A3B8, false);
+        context.drawText(this.textRenderer, bindHint, guiX + guiWidth - hintWidth - 10, guiY + 16, 0xFF94A3B8, false);
 
-        int sidebarWidth = 135;
+        int sidebarWidth = 142;
         int sidebarBg = NeuroClient.argb(bgAlpha, 10, 13, 24);
         context.fill(guiX + 1, guiY + headerHeight, guiX + sidebarWidth, guiY + guiHeight - 1, sidebarBg);
 
+        ModuleManager moduleManager = nc.getModuleManager();
         int catY = guiY + headerHeight + 12;
         for (Category category : Category.values()) {
             boolean isSelected = (category == this.currentCategory);
             int textColor = isSelected ? 0xFFFFFFFF : 0xFF94A3B8;
+            int count = moduleManager.getModulesByCategory(category).size();
 
             if (isSelected) {
                 context.fill(guiX + 4, catY, guiX + 7, catY + 26, 0xFF8B5CF6);
                 context.fill(guiX + 8, catY, guiX + sidebarWidth - 6, catY + 26, NeuroClient.argb(55, 139, 92, 246));
             }
 
-            context.drawText(this.textRenderer, category.getDisplayName(), guiX + 16, catY + 9, textColor, isSelected);
+            context.drawText(this.textRenderer, category.getDisplayName() + " (" + count + ")", guiX + 14, catY + 9, textColor, isSelected);
             catY += 32;
         }
 
-        // Подсказка команд внизу сайдбара
-        context.drawText(this.textRenderer, ".neuro rec", guiX + 12, guiY + guiHeight - 40, 0xFF94A3B8, false);
-        context.drawText(this.textRenderer, ".neuro train", guiX + 12, guiY + guiHeight - 28, 0xFFA78BFA, false);
-        context.drawText(this.textRenderer, "Колесо: скролл", guiX + 12, guiY + guiHeight - 16, 0xFF64748B, false);
+        // Подсказки внизу сайдбара
+        context.drawText(this.textRenderer, ".fp — ФейкПлеер", guiX + 10, guiY + guiHeight - 52, 0xFF34D399, false);
+        context.drawText(this.textRenderer, ".neuro rec", guiX + 10, guiY + guiHeight - 40, 0xFF94A3B8, false);
+        context.drawText(this.textRenderer, ".neuro train", guiX + 10, guiY + guiHeight - 28, 0xFFA78BFA, false);
+        context.drawText(this.textRenderer, "ПКМ: настройки", guiX + 10, guiY + guiHeight - 16, 0xFF64748B, false);
 
-        int contentX = guiX + sidebarWidth + 14;
+        int contentX = guiX + sidebarWidth + 12;
         int contentY = guiY + headerHeight + 10;
-        int contentWidth = guiWidth - sidebarWidth - 28;
+        int contentWidth = guiWidth - sidebarWidth - 24;
         int contentBottom = guiY + guiHeight - 10;
 
         context.enableScissor(contentX - 2, contentY, contentX + contentWidth + 2, contentBottom);
 
-        ModuleManager moduleManager = nc.getModuleManager();
         List<Module> modules = moduleManager.getModulesByCategory(this.currentCategory);
 
         int modY = contentY - this.scrollOffset;
@@ -1616,10 +3456,11 @@ public class ModernClickGuiScreen extends Screen {
             context.fill(contentX, modY, contentX + contentWidth, modY + 34, cardBg);
             context.drawBorder(contentX, modY, contentWidth, 34, cardBorder);
 
-            context.drawText(this.textRenderer, module.getName(), contentX + 12, modY + 8,
+            String title = module.getName() + "  §7(" + module.getSettings().size() + " настр. — ПКМ)";
+            context.drawText(this.textRenderer, title, contentX + 12, modY + 7,
                     module.isEnabled() ? 0xFFFFFFFF : 0xFFCBD5E1, module.isEnabled());
-            context.drawText(this.textRenderer, module.getDescription(), contentX + 12, modY + 20,
-                    0xFF64748B, false);
+            context.drawText(this.textRenderer, module.getDescription(), contentX + 12, modY + 19,
+                    0xFF94A3B8, false);
 
             int toggleX = contentX + contentWidth - 38;
             int toggleY = modY + 10;
@@ -1632,15 +3473,31 @@ public class ModernClickGuiScreen extends Screen {
 
             if (this.expandedModule == module && !module.getSettings().isEmpty()) {
                 for (Setting<?> setting : module.getSettings()) {
-                    context.fill(contentX + 8, modY, contentX + contentWidth - 8, modY + 22, NeuroClient.argb(225, 10, 14, 26));
-                    if (setting instanceof SliderSetting slider) {
-                        double ratio = (slider.getValue() - slider.getMin()) / (slider.getMax() - slider.getMin());
-                        int fillW = (int) ((contentWidth - 16) * Math.max(0.0, Math.min(1.0, ratio)));
-                        context.fill(contentX + 8, modY + 19, contentX + 8 + fillW, modY + 22, 0xFF8B5CF6);
+                    if (setting instanceof MultiSelectSetting multi) {
+                        context.fill(contentX + 8, modY, contentX + contentWidth - 8, modY + 36, NeuroClient.argb(230, 10, 14, 26));
+                        context.drawText(this.textRenderer, multi.getName() + ":", contentX + 14, modY + 5, 0xFFA78BFA, false);
+                        int chipX = contentX + 14;
+                        int chipY = modY + 17;
+                        for (String opt : multi.getOptions()) {
+                            boolean sel = multi.isSelected(opt);
+                            int cw = this.textRenderer.getWidth(opt) + 10;
+                            context.fill(chipX, chipY, chipX + cw, chipY + 14,
+                                    sel ? NeuroClient.argb(230, 124, 58, 237) : NeuroClient.argb(200, 30, 41, 59));
+                            context.drawText(this.textRenderer, opt, chipX + 5, chipY + 3, sel ? 0xFFFFFFFF : 0xFF94A3B8, false);
+                            chipX += cw + 4;
+                        }
+                        modY += 38;
+                    } else {
+                        context.fill(contentX + 8, modY, contentX + contentWidth - 8, modY + 22, NeuroClient.argb(225, 10, 14, 26));
+                        if (setting instanceof SliderSetting slider) {
+                            double ratio = (slider.getValue() - slider.getMin()) / (slider.getMax() - slider.getMin());
+                            int fillW = (int) ((contentWidth - 16) * Math.max(0.0, Math.min(1.0, ratio)));
+                            context.fill(contentX + 8, modY + 19, contentX + 8 + fillW, modY + 22, 0xFF8B5CF6);
+                        }
+                        String label = setting.getName() + ": " + setting.getValue();
+                        context.drawText(this.textRenderer, label, contentX + 16, modY + 6, 0xFFC4B5FD, false);
+                        modY += 24;
                     }
-                    String label = setting.getName() + ": " + setting.getValue();
-                    context.drawText(this.textRenderer, label, contentX + 16, modY + 6, 0xFFC4B5FD, false);
-                    modY += 24;
                 }
                 modY += 4;
             }
@@ -1651,16 +3508,27 @@ public class ModernClickGuiScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        this.scrollOffset = Math.max(0, this.scrollOffset - (int) (verticalAmount * 18));
+        this.scrollOffset = Math.max(0, this.scrollOffset - (int) (verticalAmount * 22));
         return true;
     }
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         NeuroClient nc = NeuroClient.getInstance();
-        int recBtnX = guiX + 250;
+
+        int fpBtnX = guiX + 215;
+        int fpBtnY = guiY + 10;
+        if (button == 0 && mouseX >= fpBtnX && mouseX <= fpBtnX + 104 && mouseY >= fpBtnY && mouseY <= fpBtnY + 22) {
+            if (nc != null) {
+                FakePlayerModule fpMod = nc.getModuleManager().getModule(FakePlayerModule.class);
+                if (fpMod != null) fpMod.toggle();
+            }
+            return true;
+        }
+
+        int recBtnX = fpBtnX + 110;
         int recBtnY = guiY + 10;
-        if (button == 0 && mouseX >= recBtnX && mouseX <= recBtnX + 108 && mouseY >= recBtnY && mouseY <= recBtnY + 22) {
+        if (button == 0 && mouseX >= recBtnX && mouseX <= recBtnX + 104 && mouseY >= recBtnY && mouseY <= recBtnY + 22) {
             if (nc != null && nc.getDatasetRecorder() != null) {
                 AuraModule aura = nc.getModuleManager().getModule(AuraModule.class);
                 if (nc.getDatasetRecorder().isRecording()) {
@@ -1674,9 +3542,9 @@ public class ModernClickGuiScreen extends Screen {
             return true;
         }
 
-        int trBtnX = recBtnX + 116;
+        int trBtnX = recBtnX + 110;
         int trBtnY = guiY + 10;
-        if (button == 0 && mouseX >= trBtnX && mouseX <= trBtnX + 108 && mouseY >= trBtnY && mouseY <= trBtnY + 22) {
+        if (button == 0 && mouseX >= trBtnX && mouseX <= trBtnX + 104 && mouseY >= trBtnY && mouseY <= trBtnY + 22) {
             if (nc != null && nc.getTrainerManager() != null && !nc.getTrainerManager().isTraining()) {
                 if (nc.getDatasetRecorder() != null && nc.getDatasetRecorder().isRecording()) {
                     nc.getDatasetRecorder().stopRecording();
@@ -1695,7 +3563,7 @@ public class ModernClickGuiScreen extends Screen {
             return true;
         }
 
-        int sidebarWidth = 135;
+        int sidebarWidth = 142;
         int headerHeight = 42;
         if (mouseX >= guiX && mouseX <= guiX + sidebarWidth && mouseY >= guiY + headerHeight) {
             int catY = guiY + headerHeight + 12;
@@ -1710,9 +3578,9 @@ public class ModernClickGuiScreen extends Screen {
             }
         }
 
-        int contentX = guiX + sidebarWidth + 14;
+        int contentX = guiX + sidebarWidth + 12;
         int contentY = guiY + headerHeight + 10;
-        int contentWidth = guiWidth - sidebarWidth - 28;
+        int contentWidth = guiWidth - sidebarWidth - 24;
         int contentBottom = guiY + guiHeight - 10;
 
         if (mouseY < contentY || mouseY > contentBottom) {
@@ -1737,20 +3605,38 @@ public class ModernClickGuiScreen extends Screen {
 
             if (this.expandedModule == module && !module.getSettings().isEmpty()) {
                 for (Setting<?> setting : module.getSettings()) {
-                    if (mouseX >= contentX + 8 && mouseX <= contentX + contentWidth - 8 &&
-                        mouseY >= modY && mouseY <= modY + 22) {
-                        if (setting instanceof BooleanSetting boolSetting) {
-                            boolSetting.toggle();
-                        } else if (setting instanceof ModeSetting modeSetting) {
-                            modeSetting.cycle();
-                        } else if (setting instanceof SliderSetting sliderSetting) {
-                            double ratio = (mouseX - (contentX + 8)) / (double) (contentWidth - 16);
-                            double val = sliderSetting.getMin() + ratio * (sliderSetting.getMax() - sliderSetting.getMin());
-                            sliderSetting.setValue(val);
+                    if (setting instanceof MultiSelectSetting multi) {
+                        if (mouseX >= contentX + 8 && mouseX <= contentX + contentWidth - 8 &&
+                            mouseY >= modY && mouseY <= modY + 36) {
+                            int chipX = contentX + 14;
+                            int chipY = modY + 17;
+                            for (String opt : multi.getOptions()) {
+                                int cw = this.textRenderer.getWidth(opt) + 10;
+                                if (mouseX >= chipX && mouseX <= chipX + cw && mouseY >= chipY && mouseY <= chipY + 14) {
+                                    multi.toggleOption(opt);
+                                    return true;
+                                }
+                                chipX += cw + 4;
+                            }
                         }
-                        return true;
+                        modY += 38;
+                    } else {
+                        if (mouseX >= contentX + 8 && mouseX <= contentX + contentWidth - 8 &&
+                            mouseY >= modY && mouseY <= modY + 22) {
+                            if (setting instanceof BooleanSetting boolSetting) {
+                                boolSetting.toggle();
+                            } else if (setting instanceof ModeSetting modeSetting) {
+                                modeSetting.cycle();
+                            } else if (setting instanceof SliderSetting sliderSetting) {
+                                this.activeSlider = sliderSetting;
+                                double ratio = (mouseX - (contentX + 8)) / (double) (contentWidth - 16);
+                                double val = sliderSetting.getMin() + ratio * (sliderSetting.getMax() - sliderSetting.getMin());
+                                sliderSetting.setValue(val);
+                            }
+                            return true;
+                        }
+                        modY += 24;
                     }
-                    modY += 24;
                 }
                 modY += 4;
             }
@@ -1763,6 +3649,7 @@ public class ModernClickGuiScreen extends Screen {
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         if (button == 0) {
             this.isDragging = false;
+            this.activeSlider = null;
         }
         return super.mouseReleased(mouseX, mouseY, button);
     }
@@ -1772,6 +3659,15 @@ public class ModernClickGuiScreen extends Screen {
         if (this.isDragging) {
             this.guiX = (int) (mouseX - this.dragOffsetX);
             this.guiY = (int) (mouseY - this.dragOffsetY);
+            return true;
+        }
+        if (this.activeSlider != null) {
+            int sidebarWidth = 142;
+            int contentX = guiX + sidebarWidth + 12;
+            int contentWidth = guiWidth - sidebarWidth - 24;
+            double ratio = (mouseX - (contentX + 8)) / (double) (contentWidth - 16);
+            double val = this.activeSlider.getMin() + ratio * (this.activeSlider.getMax() - this.activeSlider.getMin());
+            this.activeSlider.setValue(val);
             return true;
         }
         return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
@@ -3205,6 +5101,7 @@ import net.minecraft.text.Text;
 import neuro.client.NeuroClient;
 import neuro.client.gui.ModernClickGuiScreen;
 import neuro.client.module.combat.AuraModule;
+import neuro.client.module.combat.FakePlayerModule;
 
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
@@ -3213,7 +5110,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Перехватывает команды ".neuro ...", ".aura ...", ".gui", ".menu" в чате на стороне клиента (не отправляя их на сервер).
+ * Перехватывает команды ".neuro ...", ".aura ...", ".fp", ".fakeplayer", ".gui", ".menu" в чате на стороне клиента (не отправляя их на сервер).
  */
 public class NeuroCommandManager {
 
@@ -3225,6 +5122,16 @@ public class NeuroCommandManager {
                 MinecraftClient client = MinecraftClient.getInstance();
                 if (client != null) {
                     client.execute(() -> client.setScreen(new ModernClickGuiScreen()));
+                }
+                return false;
+            }
+            if (trimmed.equalsIgnoreCase(".fp") || trimmed.equalsIgnoreCase(".fakeplayer")) {
+                MinecraftClient client = MinecraftClient.getInstance();
+                if (client != null) {
+                    client.execute(() -> {
+                        FakePlayerModule fp = NeuroClient.getInstance().getModuleManager().getModule(FakePlayerModule.class);
+                        if (fp != null) fp.toggle();
+                    });
                 }
                 return false;
             }
@@ -3248,11 +5155,20 @@ public class NeuroCommandManager {
         NeuroTrainerManager trainer = nc.getTrainerManager();
         NeuroAuraEngine engine = nc.getNeuroEngine();
         AuraModule aura = nc.getModuleManager().getModule(AuraModule.class);
+        FakePlayerModule fp = nc.getModuleManager().getModule(FakePlayerModule.class);
 
         switch (sub) {
             case "gui":
             case "menu": {
                 client.execute(() -> client.setScreen(new ModernClickGuiScreen()));
+                break;
+            }
+            case "fp":
+            case "fakeplayer":
+            case "bot": {
+                if (fp != null) {
+                    fp.toggle();
+                }
                 break;
             }
             case "rec":
@@ -3318,6 +5234,7 @@ public class NeuroCommandManager {
             default: {
                 reply(client, "§d✦ Команды обучаемой Киллауры Neuro 1.21.4:");
                 reply(client, "§e.gui §7или §e.neuro gui §7— открыть меню ClickGUI (удобно на телефоне)");
+                reply(client, "§e.fp §7или §e.neuro fp §7— заспавнить / убрать Фейк-Плеера (PvP Бота)");
                 reply(client, "§e.neuro record <имя> §7— начать запись движений Вашей руки в .csv");
                 reply(client, "§e.neuro stop §7— остановить запись и сохранить датасет");
                 reply(client, "§e.neuro train [эпох] §7— обучить нейросеть (GRU+MDN) и загрузить aim.json");

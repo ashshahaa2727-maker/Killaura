@@ -11,8 +11,8 @@ import java.util.List;
 
 public class SpeedModule extends Module {
     private final ModeSetting mode = new ModeSetting("Speed Mode", "Bhop Strafe",
-            List.of("Bhop Strafe", "Ground Fast", "LowHop"));
-    private final SliderSetting factor = new SliderSetting("Multiplier", 1.2, 1.0, 2.5, 0.05);
+            List.of("Bhop Strafe", "Grim Collide", "FunTime Snow", "Ground Fast", "LowHop"));
+    private final SliderSetting factor = new SliderSetting("Multiplier", 1.35, 1.0, 2.5, 0.05);
 
     public SpeedModule() {
         super("Speed", "Ускоренное передвижение и распрыжка", Category.MOVEMENT);

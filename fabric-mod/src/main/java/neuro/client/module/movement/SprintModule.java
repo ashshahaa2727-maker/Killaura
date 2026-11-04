@@ -7,11 +7,12 @@ import neuro.client.setting.BooleanSetting;
 
 public class SprintModule extends Module {
     private final BooleanSetting omni = new BooleanSetting("Omni Sprint", true);
+    private final BooleanSetting keepSprint = new BooleanSetting("KeepSprint", true);
 
     public SprintModule() {
         super("Sprint", "Автоматический бег без зажатия клавиши", Category.MOVEMENT);
         this.setEnabled(true);
-        this.addSettings(omni);
+        this.addSettings(omni, keepSprint);
     }
 
     @Override
